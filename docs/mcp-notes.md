@@ -72,6 +72,21 @@ update first.)
   subclass (a Comment node, a `Branch`, a `Print String`, an `AnimGetter`
   like "Current State Time") by class name. If a node is fully *missing*
   (not just corrupted), you currently have to add it by hand in the editor.
+- **All actor-query tools are scoped to the editor world, not the running
+  PIE world.** Confirmed live: with PIE running (`UEDPIE_0_ALS_DemoLevel`),
+  `list_actors`, `find_actors_by_name`, and `get_scene_summary` all still
+  report the editor world (`ALS_DemoLevel`) - level-placed actors show up
+  (they exist in both), but the dynamically-spawned player pawn does not,
+  since it only exists in the PIE world copy. `GameplayStatics.get_all_actors_of_class(None, ...)`
+  from Python has the same problem - passing `None` as the world context
+  resolves to the editor world, not PIE, and returns nothing. There is
+  currently no way found to reach PIE-only actors (the spawned player
+  character, anything spawned at runtime) through this MCP setup at all,
+  which blocks the "call a BlueprintCallable function directly on the live
+  PIE actor to test gameplay logic without needing real input" pattern
+  ResidentHorrorV1's notes describe - untested here whether their setup
+  actually has this working or documents the same gap. Real gameplay
+  testing currently requires a human to actually play.
 - **No PIE input injection.** Nothing in this MCP setup can inject simulated
   keyboard/mouse input into a running Play-In-Editor session. `play_in_editor`
   can start/stop PIE, but testing actual gameplay input (movement, aiming,
