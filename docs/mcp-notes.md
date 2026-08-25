@@ -86,7 +86,11 @@ update first.)
   PIE actor to test gameplay logic without needing real input" pattern
   ResidentHorrorV1's notes describe - untested here whether their setup
   actually has this working or documents the same gap. Real gameplay
-  testing currently requires a human to actually play.
+  testing currently requires a human to actually play, until proper
+  automated testing is set up - see `testing.md` for the actual UE5
+  automated-testing story (CQTest/CQTestEnhancedInput) and why it sidesteps
+  this problem entirely by running as engine-internal code rather than an
+  external MCP client.
 - **No PIE input injection.** Nothing in this MCP setup can inject simulated
   keyboard/mouse input into a running Play-In-Editor session. `play_in_editor`
   can start/stop PIE, but testing actual gameplay input (movement, aiming,
