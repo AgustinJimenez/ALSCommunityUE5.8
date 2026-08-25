@@ -91,6 +91,22 @@ update first.)
   — nothing distinguishes "editor crashed" from "network hiccup." Always
   check `Get-Process -Name UnrealEditor` after any suspicious error before
   assuming a transient failure.
+- **`Skeleton::Sockets` (and other similarly-marked properties) are blocked
+  from Python** the same way AnimGraph `Nodes` are — "protected and cannot
+  be read." Fixed for sockets specifically via `add_socket` /
+  `set_socket_transform` / `list_sockets` (added in commit `bc8c7fe`, using
+  `ISkeletonEditorModule::CreateEditableSkeleton()` — the same API the
+  Skeleton Editor UI itself uses, no open editor window required). Expect
+  the same pattern to recur for other editor-only reflected properties.
+- **`reload_mcp_server` hard-restarts the Node bridge process rather than
+  gracefully refreshing it.** Calling it from a live session kills your own
+  MCP connection (shows as "Connection closed", every tool goes
+  unavailable). It exists for picking up `index.js`/`toolDefinitions.js`
+  changes without a full Claude Code restart, but the caller doesn't
+  survive the call to see whether it worked. **Recovery**: in Claude Code,
+  run `/mcp` — it can reconnect a dropped stdio MCP server without
+  restarting the whole session. Worth fixing `reload_mcp_server` itself to
+  not kill its own caller's connection in a future pass.
 
 ## Roadmap: Mover / Motion Matching / deeper GAS support
 
