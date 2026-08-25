@@ -3,10 +3,29 @@
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
 #include "InputActionValue.h"
+#include "Library/ALSCharacterEnumLibrary.h"
 #include "ALSWeaponFireComponent.generated.h"
 
 class UInputAction;
 class UInputMappingContext;
+
+// Per-weapon-type ammo capacity/reload time, keyed by the character's
+// EALSOverlayState (the same enum ALS_CharacterBP's OnUpdateHeldObject
+// already switches on to pick which mesh to attach). Only Rifle actually
+// has a working Muzzle socket right now (see AGENTS.md), but keying this
+// by overlay state now means adding a second working weapon later is just
+// adding a map entry and a socket, not a rework.
+USTRUCT(BlueprintType)
+struct FALSWeaponAmmoStats
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, meta = (ClampMin = "1"))
+	int32 MagazineSize = 30;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, meta = (ClampMin = "0.1"))
+	float ReloadSeconds = 2.0f;
+};
 
 // Hitscan weapon firing. Binds its own Enhanced Input action directly
 // (rather than routing through ALSPlayerController's name-based action
@@ -33,12 +52,28 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "ALS|Weapon")
 	void StopFiring();
 
+	// Start reloading the currently held weapon. No-op if already full,
+	// already reloading, or the current overlay state has no ammo stats
+	// configured. There is no reload animation available in this project's
+	// content (checked - none exist), so this is a pure timed gameplay
+	// mechanic for now: firing is blocked for ReloadSeconds, then the
+	// magazine refills. See AGENTS.md for the animation-gap note.
+	UFUNCTION(BlueprintCallable, Category = "ALS|Weapon|Ammo")
+	void Reload();
+
+	UFUNCTION(BlueprintPure, Category = "ALS|Weapon|Ammo")
+	int32 GetCurrentAmmoInMagazine() const { return CurrentAmmoInMagazine; }
+
+	UFUNCTION(BlueprintPure, Category = "ALS|Weapon|Ammo")
+	bool IsReloading() const { return bIsReloading; }
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 	void HandleFireStarted(const FInputActionValue& Value);
 	void HandleFireStopped(const FInputActionValue& Value);
+	void HandleReloadInput(const FInputActionValue& Value);
 
 	// A pawn's BeginPlay typically runs before its PlayerController actually
 	// possesses it, so GetController() is often still null when this
@@ -63,6 +98,21 @@ protected:
 	// needs editing to add a new action.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "ALS|Weapon|Input")
 	TObjectPtr<UInputMappingContext> FireInputMappingContext;
+
+	// Reload input action. Can point at the same mapping context as
+	// FireInputAction (a mapping context just holds a list of key
+	// mappings, nothing stops it holding more than one action) - only
+	// FireInputMappingContext actually needs adding to the EnhancedInput
+	// subsystem, this action just needs to exist in whichever context is.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "ALS|Weapon|Input")
+	TObjectPtr<UInputAction> ReloadInputAction;
+
+	// Ammo capacity/reload time per overlay state (weapon type). An overlay
+	// state with no entry here is treated as having unlimited ammo and
+	// instant reload - i.e. ammo limits are opt-in per weapon, not a
+	// default restriction.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "ALS|Weapon|Ammo")
+	TMap<EALSOverlayState, FALSWeaponAmmoStats> AmmoStatsByOverlayState;
 
 	// Name of the socket on the currently held weapon mesh to trace from.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "ALS|Weapon")
@@ -144,10 +194,26 @@ private:
 	void UpdateBloomForShot();
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 
+	// If the character's overlay state has changed since the last check (or
+	// this is the first check), refills CurrentAmmoInMagazine to the new
+	// weapon's full capacity. No delegate exists for "overlay state
+	// changed" that this component can hook, so this is checked lazily at
+	// the top of Fire() and Reload() instead, the same pattern bloom/recoil
+	// already use for their own lazy time-based state.
+	void SyncAmmoForCurrentWeapon(const class AALSBaseCharacter* Character);
+
+	void FinishReload();
+
 	FTimerHandle FireTimerHandle;
+	FTimerHandle ReloadTimerHandle;
 	bool bInputBound = false;
 
 	float CurrentBloomDegrees = 0.0f;
 	float LastFireWorldTime = -1000.0f;
 	float RemainingRecoilPitch = 0.0f;
+
+	EALSOverlayState LastSyncedOverlayState = EALSOverlayState::Default;
+	bool bAmmoSynced = false;
+	int32 CurrentAmmoInMagazine = 0;
+	bool bIsReloading = false;
 };

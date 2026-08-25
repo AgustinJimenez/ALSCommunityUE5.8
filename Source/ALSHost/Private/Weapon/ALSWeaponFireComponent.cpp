@@ -34,6 +34,14 @@ UALSWeaponFireComponent::UALSWeaponFireComponent()
 	// remainder every tick is what makes it feel like a kick-and-settle
 	// rather than a single frame flicker).
 	PrimaryComponentTick.bCanEverTick = true;
+
+	// Default so the Rifle (the only weapon with a working Muzzle socket
+	// right now) has a real magazine limit out of the box, without needing
+	// manual per-instance Blueprint configuration.
+	FALSWeaponAmmoStats RifleStats;
+	RifleStats.MagazineSize = 30;
+	RifleStats.ReloadSeconds = 2.2f;
+	AmmoStatsByOverlayState.Add(EALSOverlayState::Rifle, RifleStats);
 }
 
 void UALSWeaponFireComponent::BeginPlay()
@@ -108,6 +116,12 @@ void UALSWeaponFireComponent::TrySetupInput()
 	EIC->BindAction(FireInputAction, ETriggerEvent::Started, this, &UALSWeaponFireComponent::HandleFireStarted);
 	EIC->BindAction(FireInputAction, ETriggerEvent::Completed, this, &UALSWeaponFireComponent::HandleFireStopped);
 	EIC->BindAction(FireInputAction, ETriggerEvent::Canceled, this, &UALSWeaponFireComponent::HandleFireStopped);
+
+	if (ReloadInputAction)
+	{
+		EIC->BindAction(ReloadInputAction, ETriggerEvent::Started, this, &UALSWeaponFireComponent::HandleReloadInput);
+	}
+
 	bInputBound = true;
 
 	if (FireInputMappingContext)
@@ -131,6 +145,11 @@ void UALSWeaponFireComponent::HandleFireStarted(const FInputActionValue& Value)
 void UALSWeaponFireComponent::HandleFireStopped(const FInputActionValue& Value)
 {
 	StopFiring();
+}
+
+void UALSWeaponFireComponent::HandleReloadInput(const FInputActionValue& Value)
+{
+	Reload();
 }
 
 void UALSWeaponFireComponent::StartFiring()
@@ -195,6 +214,91 @@ void UALSWeaponFireComponent::UpdateBloomForShot()
 	RemainingRecoilPitch = FMath::Min(RemainingRecoilPitch + RecoilKickPerShotDegrees, MaxRecoilPitchDegrees);
 }
 
+void UALSWeaponFireComponent::SyncAmmoForCurrentWeapon(const AALSBaseCharacter* Character)
+{
+	if (!Character)
+	{
+		return;
+	}
+
+	const EALSOverlayState CurrentState = Character->GetOverlayState();
+	if (bAmmoSynced && CurrentState == LastSyncedOverlayState)
+	{
+		return;
+	}
+
+	LastSyncedOverlayState = CurrentState;
+	bAmmoSynced = true;
+
+	if (const FALSWeaponAmmoStats* Stats = AmmoStatsByOverlayState.Find(CurrentState))
+	{
+		CurrentAmmoInMagazine = Stats->MagazineSize;
+	}
+	else
+	{
+		// No ammo stats configured for this overlay state: treated as
+		// unlimited ammo, matching props like the Torch/Binoculars that
+		// were never meant to have a magazine at all.
+		CurrentAmmoInMagazine = -1;
+	}
+
+	// Switching weapons cancels an in-progress reload of the previous one.
+	if (bIsReloading)
+	{
+		bIsReloading = false;
+		if (UWorld* World = GetWorld())
+		{
+			World->GetTimerManager().ClearTimer(ReloadTimerHandle);
+		}
+	}
+}
+
+void UALSWeaponFireComponent::Reload()
+{
+	AALSCharacter* ALSChar = Cast<AALSCharacter>(GetOwner());
+	SyncAmmoForCurrentWeapon(ALSChar);
+
+	if (bIsReloading)
+	{
+		return;
+	}
+
+	const FALSWeaponAmmoStats* Stats = ALSChar ? AmmoStatsByOverlayState.Find(ALSChar->GetOverlayState()) : nullptr;
+	if (!Stats)
+	{
+		// Unlimited ammo for this weapon (or no weapon/character) - nothing
+		// to reload.
+		return;
+	}
+
+	if (CurrentAmmoInMagazine >= Stats->MagazineSize)
+	{
+		return;
+	}
+
+	// Full-auto should not keep firing through a reload.
+	StopFiring();
+
+	bIsReloading = true;
+	UE_LOG(LogTemp, Log, TEXT("ALSWeaponFireComponent: reloading (%.1fs, no reload animation available yet - see AGENTS.md)"), Stats->ReloadSeconds);
+
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().SetTimer(ReloadTimerHandle, this, &UALSWeaponFireComponent::FinishReload, Stats->ReloadSeconds, /*bLoop=*/false);
+	}
+}
+
+void UALSWeaponFireComponent::FinishReload()
+{
+	AALSCharacter* ALSChar = Cast<AALSCharacter>(GetOwner());
+	const FALSWeaponAmmoStats* Stats = ALSChar ? AmmoStatsByOverlayState.Find(ALSChar->GetOverlayState()) : nullptr;
+
+	bIsReloading = false;
+	CurrentAmmoInMagazine = Stats ? Stats->MagazineSize : CurrentAmmoInMagazine;
+
+	UE_LOG(LogTemp, Log, TEXT("ALSWeaponFireComponent: reload complete, %d rounds"), CurrentAmmoInMagazine);
+}
+
 float UALSWeaponFireComponent::ComputeCurrentSpreadDegrees(const AALSBaseCharacter* Character) const
 {
 	if (!Character)
@@ -243,6 +347,20 @@ void UALSWeaponFireComponent::Fire()
 	if (!WeaponMesh || !WeaponMesh->GetSkeletalMeshAsset())
 	{
 		UE_LOG(LogTemp, Warning, TEXT("ALSWeaponFireComponent::Fire - no skeletal-mesh weapon currently held"));
+		return;
+	}
+
+	SyncAmmoForCurrentWeapon(ALSChar);
+
+	if (bIsReloading)
+	{
+		return;
+	}
+
+	if (CurrentAmmoInMagazine == 0)
+	{
+		UE_LOG(LogTemp, Log, TEXT("ALSWeaponFireComponent::Fire - empty, click"));
+		StopFiring();
 		return;
 	}
 
@@ -299,5 +417,16 @@ void UALSWeaponFireComponent::Fire()
 	else
 	{
 		UE_LOG(LogTemp, Log, TEXT("ALSWeaponFireComponent::Fire - no hit"));
+	}
+
+	if (CurrentAmmoInMagazine > 0)
+	{
+		--CurrentAmmoInMagazine;
+		if (CurrentAmmoInMagazine == 0)
+		{
+			// Ran dry mid-burst: stop full-auto cleanly instead of spinning
+			// the timer doing nothing but log "empty, click" every interval.
+			StopFiring();
+		}
 	}
 }

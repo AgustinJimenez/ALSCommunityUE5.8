@@ -63,6 +63,52 @@ Always use `FBlueprintEditorUtils::RemoveNode()` instead. (Fixed in
 `ClaudeUnrealMCP` commit `cbfadf5`; if you're on an older submodule pin,
 update first.)
 
+## Cross-project asset migration and retargeting (both fully scriptable)
+
+Needed this to bring a reload animation in from ResidentHorrorV1 (ALS's own
+content has none). Two separate scriptable pieces, both discovered by
+reading engine source rather than assumed:
+
+- **`IAssetTools::MigratePackages(PackageNames, DestinationPath, FMigrationOptions)`**
+  is `UFUNCTION(BlueprintCallable)`, exposed to Python as
+  `unreal.AssetToolsHelpers.get_asset_tools().migrate_packages(...)`.
+  `FMigrationOptions.bPrompt`'s own doc comment says "always false through
+  scripting" — Epic built this for automation. **Must run from the source
+  project's own editor session**, not the destination's — it operates on
+  that project's currently-loaded asset registry, and this MCP bridge is
+  just a TCP client pointed at whichever editor is running on port `9877`.
+  In practice: close the destination project's editor, open the source
+  project's, run the migration, close it, reopen the destination. Pulls in
+  the full dependency tree by default (`bIgnoreDependencies=false`), which
+  can be much larger than the one asset you actually wanted — 442MB across
+  139 files for a single reload animation, mostly a Control Rig pose
+  library. Safe to delete the staging import afterward once whatever you
+  actually needed no longer depends on it (verify with
+  `AssetRegistry.get_dependencies`, not assumed).
+- **Retargeting onto a different Skeleton is not scriptable at all without a
+  custom tool.** `EditorAnimUtils::RetargetAnimations()` — what the classic
+  "Retarget Skeleton" Content Browser right-click action calls internally —
+  is plain C++ free functions in the `UnrealEd` module, zero Blueprint/
+  Python exposure. Directly setting an `AnimSequence`'s `Skeleton` property
+  via Python fails outright: `"Skeleton" ... is read-only and cannot be
+  set`. Added `retarget_anim_asset` (`ClaudeUnrealMCP` commit `591d44f`) to
+  wrap it — produces a new duplicate on the target skeleton, leaves the
+  source untouched. Only works well when the two skeletons share compatible
+  bone names/hierarchy (remaps which Skeleton the data is interpreted
+  against, does not run real IK Rig retargeting math); confirm bone
+  compatibility first via `SkeletalMeshEditorSubsystem.get_bone_children`
+  walks on both skeletons before assuming it'll work.
+- **A bulk `delete_directory` can silently hang the whole MCP connection.**
+  Deleting the 139-file staging import above triggered what was almost
+  certainly a blocking confirmation dialog — every MCP call including
+  `ping` timed out, while `Get-Process UnrealEditor` still reported
+  `Responding` (Windows only flags a process as hung when it stops pumping
+  window messages, which a modal waiting for a click does not do). Nothing
+  fixable from the MCP side; needed a human to find and click through the
+  dialog in the actual editor window before the connection recovered. Have
+  a human on standby before triggering a large delete headlessly, don't
+  just assume it needs more time.
+
 ## Known gaps — things this MCP setup currently can't do
 
 - **No generic "add arbitrary node" tool.** The typed `add_*` tools
