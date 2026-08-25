@@ -92,6 +92,33 @@ update first.)
   check `Get-Process -Name UnrealEditor` after any suspicious error before
   assuming a transient failure.
 
+## Roadmap: Mover / Motion Matching / deeper GAS support
+
+If this project (or a successor, e.g. a GASP-ALS-R-based one) moves onto
+Epic's newer stack, `ClaudeUnrealMCP` will need real work to keep up.
+Checked the source directly (not assumed) as of commit `cbfadf5`:
+
+- **GAS**: `create_gameplay_ability` / `create_gameplay_effect` exist but
+  are thin — they just spawn a Blueprint parented to `GameplayAbility`/
+  `GameplayEffect`. No dedicated tooling for ability-graph editing,
+  attribute sets, or gameplay-effect specs beyond the generic
+  `manage_gameplay_tags`.
+- **Mover**: zero support. No mention anywhere in the plugin source, not
+  even scaffolding.
+- **Motion Matching / Pose Search**: zero support. Same.
+
+This isn't a hard blocker — Mover movement modes and Pose Search nodes are
+still ordinary Blueprint/AnimGraph constructs under the hood, so the
+generic tools (`read_blueprint`, `add_component`, `set_component_property`,
+and the now-fixed `delete_node`/`reconstruct_node` that reach nested
+graphs) should still work to some degree. But expect the same category of
+blind spot we just fixed for AnimGraph state machines to resurface —
+Pose Search nodes live inside AnimGraph too, and nobody's verified that
+path works yet. Building proper support is the same shape of work as the
+`delete_node` fix in this doc: find the gap live, trace the exact engine
+API via `obj dump`/source reading, add a typed C++ handler, test, commit
+to the `ClaudeUnrealMCP` repo, bump the submodule pointer.
+
 ## Re-running the asset audit
 
 See `asset-audit.md` for the unused-asset scan and its re-run snippet.
