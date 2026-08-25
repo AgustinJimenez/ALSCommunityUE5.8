@@ -91,6 +91,15 @@ update first.)
   automated-testing story (CQTest/CQTestEnhancedInput) and why it sidesteps
   this problem entirely by running as engine-internal code rather than an
   external MCP client.
+- **`add_input_mapping` does not auto-save, and force-killing the editor to
+  rebuild a C++ change discards unsaved asset edits.** Hit this for real:
+  `IMC_Fire`'s `LeftMouseButton -> IA_Fire` mapping silently disappeared
+  (came back as `mappings: []` from `read_input_mapping_context`) after a
+  rebuild-and-relaunch cycle, because `Stop-Process -Force` on
+  `UnrealEditor.exe` is a hard kill, not a graceful save-prompt shutdown.
+  Always follow `add_input_mapping` (and any other in-memory-only edit)
+  with an explicit `save_asset` before closing the editor for any reason,
+  including a routine plugin rebuild.
 - **No PIE input injection.** Nothing in this MCP setup can inject simulated
   keyboard/mouse input into a running Play-In-Editor session. `play_in_editor`
   can start/stop PIE, but testing actual gameplay input (movement, aiming,
