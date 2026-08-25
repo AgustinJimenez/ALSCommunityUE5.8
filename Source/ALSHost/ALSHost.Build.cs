@@ -6,6 +6,11 @@ public class ALSHost : ModuleRules
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 
-		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore" });
+		PublicDependencyModuleNames.AddRange(new string[]
+		{
+			"Core", "CoreUObject", "Engine", "InputCore",
+			"EnhancedInput",  // For UInputAction/UInputMappingContext, weapon fire binding
+			"ALSV4_CPP"       // For AALSCharacter, ALS enums (gait/rotation mode)
+		});
 	}
 }
