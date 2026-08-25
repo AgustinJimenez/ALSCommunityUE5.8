@@ -1,0 +1,34 @@
+# --- Unreal Engine generated / build artifacts ---
+Binaries/
+Intermediate/
+DerivedDataCache/
+Build/
+Saved/
+*.sln
+*.suo
+*.opensdf
+*.sdf
+*.VC.db
+*.VC.opendb
+
+# Automation / project file generation
+Automation_*.sln
+Automation_*.slnx
+*.slnx
+
+# --- Plugins: same generated folders, recursively ---
+Plugins/**/Binaries/
+Plugins/**/Intermediate/
+Plugins/**/Saved/
+
+# --- Node.js (ClaudeUnrealMCP bridge) ---
+Plugins/ClaudeUnrealMCP/MCPServer/node_modules/
+npm-debug.log*
+
+# --- OS / editor cruft ---
+.vs/
+.vscode/
+*.tmp
+*.log
+Thumbs.db
+.DS_Store

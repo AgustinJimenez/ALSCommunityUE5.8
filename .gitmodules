@@ -1,0 +1,3 @@
+[submodule "Plugins/ClaudeUnrealMCP"]
+	path = Plugins/ClaudeUnrealMCP
+	url = https://github.com/AgustinJimenez/ClaudeUnrealMCP.git
