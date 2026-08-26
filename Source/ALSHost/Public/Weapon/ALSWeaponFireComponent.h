@@ -8,6 +8,9 @@
 
 class UInputAction;
 class UInputMappingContext;
+class UAnimSequenceBase;
+class UAnimMontage;
+class UUserWidget;
 
 // Per-weapon-type ammo capacity/reload time, keyed by the character's
 // EALSOverlayState (the same enum ALS_CharacterBP's OnUpdateHeldObject
@@ -25,6 +28,28 @@ struct FALSWeaponAmmoStats
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, meta = (ClampMin = "0.1"))
 	float ReloadSeconds = 2.0f;
+
+	// Played via PlaySlotAnimationAsDynamicMontage on the component's
+	// ReloadMontageSlotName - no hand-authored AnimMontage asset needed for
+	// a simple "play this once" reload. If unset, Reload() still runs the
+	// timer/ammo logic, just with nothing to play.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	TObjectPtr<UAnimSequenceBase> ReloadAnimation;
+
+	// Static correction added to HeldObjectRoot's relative transform for the
+	// duration of Reload() only, then reverted once FinishReload() runs. A
+	// reload animation retargeted from a different project's rig (see
+	// AGENTS.md / docs/mcp-notes.md - cross-project migration+retargeting)
+	// doesn't necessarily line up with this weapon's hand-attach point the
+	// same way our own idle/fire poses do, since it was authored against a
+	// different weapon's grip geometry. These live on the Blueprint CDO
+	// like MagazineSize/ReloadSeconds, so they can be tuned by eye in PIE
+	// without a C++ rebuild.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	FVector ReloadHeldObjectLocationOffset = FVector::ZeroVector;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	FRotator ReloadHeldObjectRotationOffset = FRotator::ZeroRotator;
 };
 
 // Hitscan weapon firing. Binds its own Enhanced Input action directly
@@ -54,10 +79,10 @@ public:
 
 	// Start reloading the currently held weapon. No-op if already full,
 	// already reloading, or the current overlay state has no ammo stats
-	// configured. There is no reload animation available in this project's
-	// content (checked - none exist), so this is a pure timed gameplay
-	// mechanic for now: firing is blocked for ReloadSeconds, then the
-	// magazine refills. See AGENTS.md for the animation-gap note.
+	// configured. Plays the weapon type's ReloadAnimation (if set) via
+	// PlaySlotAnimationAsDynamicMontage on ReloadMontageSlotName; firing is
+	// blocked for ReloadSeconds regardless of whether an animation is
+	// playing, then the magazine refills.
 	UFUNCTION(BlueprintCallable, Category = "ALS|Weapon|Ammo")
 	void Reload();
 
@@ -67,6 +92,65 @@ public:
 	UFUNCTION(BlueprintPure, Category = "ALS|Weapon|Ammo")
 	bool IsReloading() const { return bIsReloading; }
 
+	// --- Reload hand/gun offset live-tuning (debug tool) ---
+	// Equips the Rifle, disables movement (camera look still works so you
+	// can orbit and inspect), shows the mouse cursor, spawns
+	// DebugReloadTuningWidgetClass, and repeatedly replays ReloadAnimation
+	// in a loop. While active, every tick re-applies the Rifle entry's
+	// current ReloadHeldObjectLocationOffset/RotationOffset to
+	// HeldObjectRoot, so a slider bound to
+	// DebugSetReloadLocationOffset/RotationOffset updates the pose live.
+	UFUNCTION(BlueprintCallable, Category = "ALS|Weapon|Debug")
+	void DebugStartReloadOffsetTuning();
+
+	UFUNCTION(BlueprintCallable, Category = "ALS|Weapon|Debug")
+	void DebugStopReloadOffsetTuning();
+
+	UFUNCTION(BlueprintCallable, Category = "ALS|Weapon|Debug")
+	void ToggleDebugReloadOffsetTuning();
+
+	// Starts/stops the reload animation auto-repeating while tuning is
+	// active (on by default whenever DebugStartReloadOffsetTuning() runs).
+	// Turning it off lets the current play finish and then just stop
+	// repeating, instead of forcing a frozen frame.
+	UFUNCTION(BlueprintCallable, Category = "ALS|Weapon|Debug")
+	void ToggleDebugReloadAnimLoop();
+
+	UFUNCTION(BlueprintPure, Category = "ALS|Weapon|Debug")
+	bool IsDebugTuningReloadOffset() const { return bDebugTuningReloadOffset; }
+
+	UFUNCTION(BlueprintPure, Category = "ALS|Weapon|Debug")
+	bool IsDebugReloadAnimLoopEnabled() const { return bDebugReloadLoopEnabled; }
+
+	// Pauses/resumes the currently-playing reload montage in place (via
+	// Montage_Pause/Montage_Resume), for holding a fixed pose to adjust
+	// against rather than a moving target. Also pauses/resumes the replay
+	// timer so a paused montage doesn't get silently restarted underneath
+	// the frozen pose.
+	UFUNCTION(BlueprintCallable, Category = "ALS|Weapon|Debug")
+	void ToggleDebugReloadFreeze();
+
+	UFUNCTION(BlueprintPure, Category = "ALS|Weapon|Debug")
+	bool IsDebugReloadFrozen() const { return bDebugReloadFrozen; }
+
+	UFUNCTION(BlueprintPure, Category = "ALS|Weapon|Debug")
+	FVector DebugGetReloadLocationOffset() const;
+
+	UFUNCTION(BlueprintPure, Category = "ALS|Weapon|Debug")
+	FRotator DebugGetReloadRotationOffset() const;
+
+	UFUNCTION(BlueprintCallable, Category = "ALS|Weapon|Debug")
+	void DebugSetReloadLocationOffset(FVector NewOffset);
+
+	UFUNCTION(BlueprintCallable, Category = "ALS|Weapon|Debug")
+	void DebugSetReloadRotationOffset(FRotator NewOffset);
+
+	// Copies the Rifle entry's current offsets as plain text (e.g.
+	// "Location=(X=1.00,Y=0.00,Z=-2.50) Rotation=(Pitch=0.00,Yaw=5.00,Roll=0.00)")
+	// to the OS clipboard, so they can be pasted straight back into chat.
+	UFUNCTION(BlueprintCallable, Category = "ALS|Weapon|Debug")
+	void DebugCopyReloadOffsetsToClipboard();
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
@@ -74,6 +158,16 @@ protected:
 	void HandleFireStarted(const FInputActionValue& Value);
 	void HandleFireStopped(const FInputActionValue& Value);
 	void HandleReloadInput(const FInputActionValue& Value);
+	// Tap-vs-hold on the same key, distinguished by a plain timer rather
+	// than Enhanced Input Tap/Hold trigger assets: Pressed starts a
+	// DebugReloadHoldThresholdSeconds timer; if Released fires first, it's
+	// a tap (toggles the tuning panel); if the timer fires first, it's a
+	// hold (toggles the anim loop), and the subsequent Released is then
+	// just the end of that hold, not a second tap.
+	void HandleDebugReloadTuningPressed(const FInputActionValue& Value);
+	void HandleDebugReloadTuningReleased(const FInputActionValue& Value);
+	void HandleDebugReloadTuningHoldThresholdReached();
+	void HandleCameraZoomInput(const FInputActionValue& Value);
 
 	// A pawn's BeginPlay typically runs before its PlayerController actually
 	// possesses it, so GetController() is often still null when this
@@ -107,6 +201,32 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "ALS|Weapon|Input")
 	TObjectPtr<UInputAction> ReloadInputAction;
 
+	// Tap toggles DebugStartReloadOffsetTuning()/DebugStopReloadOffsetTuning();
+	// holding for DebugReloadHoldThresholdSeconds toggles
+	// ToggleDebugReloadAnimLoop() instead. Can point at the same mapping
+	// context as FireInputAction, same as ReloadInputAction above.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "ALS|Weapon|Debug")
+	TObjectPtr<UInputAction> DebugReloadTuningInputAction;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "ALS|Weapon|Debug")
+	float DebugReloadHoldThresholdSeconds = 2.0f;
+
+	// Third-person mouse wheel zoom. Not conceptually a weapon feature -
+	// bound here purely to reuse this component's existing
+	// TrySetupInput()/EnhancedInputComponent plumbing rather than building
+	// a second component just for one axis binding. Forwards to
+	// AALSHostPlayerCameraManager::AddZoomInput().
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "ALS|Weapon|Input")
+	TObjectPtr<UInputAction> CameraZoomInputAction;
+
+	// Widget class shown while reload-offset tuning is active. Expected to
+	// expose sliders/buttons that call DebugGetReloadLocationOffset,
+	// DebugSetReloadLocationOffset, DebugGetReloadRotationOffset,
+	// DebugSetReloadRotationOffset, and DebugCopyReloadOffsetsToClipboard
+	// on this component.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "ALS|Weapon|Debug")
+	TSubclassOf<UUserWidget> DebugReloadTuningWidgetClass;
+
 	// Ammo capacity/reload time per overlay state (weapon type). An overlay
 	// state with no entry here is treated as having unlimited ammo and
 	// instant reload - i.e. ammo limits are opt-in per weapon, not a
@@ -117,6 +237,16 @@ protected:
 	// Name of the socket on the currently held weapon mesh to trace from.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "ALS|Weapon")
 	FName MuzzleSocketName = TEXT("Muzzle");
+
+	// AnimGraph slot to play reload animations on. "Grounded Slot" is
+	// ALS_AnimBP's dedicated full-body one-off action slot (used for things
+	// like rolls/mantles) - a two-handed reload needs both arms plus the
+	// spine, which the single-limb slots (Arm L/Arm R individually) don't
+	// cover. Confirmed via reading every AnimGraphNode_Slot in ALS_AnimBP:
+	// the full slot list is Legs, Pelvis, Curves, Arm R, Head, Arm L,
+	// Spine, Grounded Slot, BaseLayer.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "ALS|Weapon|Ammo")
+	FName ReloadMontageSlotName = TEXT("Grounded Slot");
 
 	// Max hitscan trace distance, in cm.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "ALS|Weapon")
@@ -203,10 +333,33 @@ private:
 	void SyncAmmoForCurrentWeapon(const class AALSBaseCharacter* Character);
 
 	void FinishReload();
+	void DebugReplayReloadAnimLoop();
 
 	FTimerHandle FireTimerHandle;
 	FTimerHandle ReloadTimerHandle;
+	FTimerHandle DebugReloadLoopTimerHandle;
+	FTimerHandle DebugReloadHoldTimerHandle;
 	bool bInputBound = false;
+
+	bool bDebugTuningReloadOffset = false;
+	bool bDebugReloadLoopEnabled = true;
+	bool bDebugReloadFrozen = false;
+	bool bDebugReloadHoldThresholdFired = false;
+	TEnumAsByte<EMovementMode> SavedMovementMode = MOVE_Walking;
+
+	UPROPERTY()
+	TObjectPtr<UAnimMontage> DebugReloadTuningMontage;
+
+	UPROPERTY()
+	TObjectPtr<UUserWidget> DebugReloadTuningWidgetInstance;
+
+	// HeldObjectRoot's relative transform captured right before Reload()
+	// applies ReloadHeldObjectLocationOffset/RotationOffset, so
+	// FinishReload() can put it back exactly rather than assuming a base
+	// value (the base varies per weapon via AttachToHand's Offset param).
+	FVector SavedHeldObjectRelativeLocation = FVector::ZeroVector;
+	FRotator SavedHeldObjectRelativeRotation = FRotator::ZeroRotator;
+	bool bHeldObjectTransformSaved = false;
 
 	float CurrentBloomDegrees = 0.0f;
 	float LastFireWorldTime = -1000.0f;

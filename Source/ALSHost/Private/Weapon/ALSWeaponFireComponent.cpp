@@ -4,6 +4,8 @@
 #include "Character/ALSBaseCharacter.h"
 #include "Library/ALSCharacterEnumLibrary.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "Animation/AnimInstance.h"
+#include "Animation/AnimSequenceBase.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "InputAction.h"
@@ -15,6 +17,12 @@
 #include "DrawDebugHelpers.h"
 #include "Kismet/KismetMathLibrary.h"
 #include "HAL/IConsoleManager.h"
+#include "UObject/ConstructorHelpers.h"
+#include "GameFramework/CharacterMovementComponent.h"
+#include "Blueprint/UserWidget.h"
+#include "HAL/PlatformApplicationMisc.h"
+#include "UI/ALSRifleReloadTuningWidget.h"
+#include "Camera/ALSHostPlayerCameraManager.h"
 
 // Defaults to true while this feature is under active development, since
 // the editor gets restarted frequently for rebuilds and this CVar (like all
@@ -41,6 +49,18 @@ UALSWeaponFireComponent::UALSWeaponFireComponent()
 	FALSWeaponAmmoStats RifleStats;
 	RifleStats.MagazineSize = 30;
 	RifleStats.ReloadSeconds = 2.2f;
+
+	// Retargeted from ResidentHorrorV1 onto ALS's skeleton via the MCP
+	// retarget_anim_asset tool (see AGENTS.md / docs/mcp-notes.md for the
+	// migration+retarget pipeline). ConstructorHelpers is the standard way
+	// to hard-reference a content asset from C++ construction time.
+	static ConstructorHelpers::FObjectFinder<UAnimSequenceBase> RifleReloadAnimFinder(
+		TEXT("/Game/ALSHost/Animations/AS_Rifle_Reload.AS_Rifle_Reload"));
+	if (RifleReloadAnimFinder.Succeeded())
+	{
+		RifleStats.ReloadAnimation = RifleReloadAnimFinder.Object;
+	}
+
 	AmmoStatsByOverlayState.Add(EALSOverlayState::Rifle, RifleStats);
 }
 
@@ -122,6 +142,18 @@ void UALSWeaponFireComponent::TrySetupInput()
 		EIC->BindAction(ReloadInputAction, ETriggerEvent::Started, this, &UALSWeaponFireComponent::HandleReloadInput);
 	}
 
+	if (DebugReloadTuningInputAction)
+	{
+		EIC->BindAction(DebugReloadTuningInputAction, ETriggerEvent::Started, this, &UALSWeaponFireComponent::HandleDebugReloadTuningPressed);
+		EIC->BindAction(DebugReloadTuningInputAction, ETriggerEvent::Completed, this, &UALSWeaponFireComponent::HandleDebugReloadTuningReleased);
+		EIC->BindAction(DebugReloadTuningInputAction, ETriggerEvent::Canceled, this, &UALSWeaponFireComponent::HandleDebugReloadTuningReleased);
+	}
+
+	if (CameraZoomInputAction)
+	{
+		EIC->BindAction(CameraZoomInputAction, ETriggerEvent::Triggered, this, &UALSWeaponFireComponent::HandleCameraZoomInput);
+	}
+
 	bInputBound = true;
 
 	if (FireInputMappingContext)
@@ -152,6 +184,58 @@ void UALSWeaponFireComponent::HandleReloadInput(const FInputActionValue& Value)
 	Reload();
 }
 
+void UALSWeaponFireComponent::HandleDebugReloadTuningPressed(const FInputActionValue& Value)
+{
+	bDebugReloadHoldThresholdFired = false;
+
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().SetTimer(DebugReloadHoldTimerHandle, this,
+			&UALSWeaponFireComponent::HandleDebugReloadTuningHoldThresholdReached,
+			FMath::Max(DebugReloadHoldThresholdSeconds, 0.05f), /*bLoop=*/false);
+	}
+}
+
+void UALSWeaponFireComponent::HandleDebugReloadTuningReleased(const FInputActionValue& Value)
+{
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(DebugReloadHoldTimerHandle);
+	}
+
+	if (bDebugReloadHoldThresholdFired)
+	{
+		// This release just ends a hold that already toggled the loop -
+		// not a second tap.
+		return;
+	}
+
+	ToggleDebugReloadOffsetTuning();
+}
+
+void UALSWeaponFireComponent::HandleDebugReloadTuningHoldThresholdReached()
+{
+	bDebugReloadHoldThresholdFired = true;
+	ToggleDebugReloadAnimLoop();
+}
+
+void UALSWeaponFireComponent::HandleCameraZoomInput(const FInputActionValue& Value)
+{
+	AALSCharacter* ALSChar = Cast<AALSCharacter>(GetOwner());
+	if (!ALSChar)
+	{
+		return;
+	}
+
+	if (APlayerController* PC = Cast<APlayerController>(ALSChar->GetController()))
+	{
+		if (AALSHostPlayerCameraManager* CamMgr = Cast<AALSHostPlayerCameraManager>(PC->PlayerCameraManager))
+		{
+			CamMgr->AddZoomInput(Value.Get<float>());
+		}
+	}
+}
+
 void UALSWeaponFireComponent::StartFiring()
 {
 	UWorld* World = GetWorld();
@@ -179,6 +263,60 @@ void UALSWeaponFireComponent::StopFiring()
 void UALSWeaponFireComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+
+	if (bDebugTuningReloadOffset && bHeldObjectTransformSaved)
+	{
+		// Re-applied every tick (rather than only when the slider fires a
+		// setter) so it also stays correct if something else nudges
+		// HeldObjectRoot while tuning is active.
+		if (AALSCharacter* ALSChar = Cast<AALSCharacter>(GetOwner()))
+		{
+			if (ALSChar->HeldObjectRoot)
+			{
+				if (const FALSWeaponAmmoStats* Stats = AmmoStatsByOverlayState.Find(EALSOverlayState::Rifle))
+				{
+					ALSChar->HeldObjectRoot->SetRelativeLocation(SavedHeldObjectRelativeLocation + Stats->ReloadHeldObjectLocationOffset);
+					ALSChar->HeldObjectRoot->SetRelativeRotation(SavedHeldObjectRelativeRotation + Stats->ReloadHeldObjectRotationOffset);
+				}
+			}
+		}
+	}
+
+	// Visualizes hand-vs-gun alignment directly, live, instead of reasoning
+	// about it from animation-pose numbers: green = hand_r bone (what the
+	// gun is rigidly parented to, via the VB RHS_ik_hand_gun virtual bone),
+	// red = HeldObjectRoot (where the gun mesh's origin currently sits, with
+	// any ReloadHeldObjectLocationOffset/RotationOffset already applied),
+	// yellow = the weapon mesh's Muzzle socket. Compare the green/red gap
+	// while just holding the rifle (should be ~0, that pose is what the
+	// static Offset=0 is tuned for) against the gap during Reload() to see
+	// exactly how much the retargeted animation's grip differs.
+	if (CVarALSWeaponShowDebugTrace.GetValueOnGameThread())
+	{
+		if (AALSCharacter* DebugALSChar = Cast<AALSCharacter>(GetOwner()))
+		{
+			if (USkeletalMeshComponent* BodyMesh = DebugALSChar->GetMesh())
+			{
+				if (BodyMesh->DoesSocketExist(TEXT("hand_r")))
+				{
+					DrawDebugSphere(GetWorld(), BodyMesh->GetSocketLocation(TEXT("hand_r")), 3.0f, 12, FColor::Green, false, -1.0f, 0, 1.0f);
+				}
+			}
+
+			if (DebugALSChar->HeldObjectRoot)
+			{
+				DrawDebugSphere(GetWorld(), DebugALSChar->HeldObjectRoot->GetComponentLocation(), 3.0f, 12, FColor::Red, false, -1.0f, 0, 1.0f);
+			}
+
+			if (USkeletalMeshComponent* WeaponMesh = DebugALSChar->SkeletalMesh)
+			{
+				if (WeaponMesh->DoesSocketExist(MuzzleSocketName))
+				{
+					DrawDebugSphere(GetWorld(), WeaponMesh->GetSocketLocation(MuzzleSocketName), 3.0f, 12, FColor::Yellow, false, -1.0f, 0, 1.0f);
+				}
+			}
+		}
+	}
 
 	if (RemainingRecoilPitch <= KINDA_SMALL_NUMBER)
 	{
@@ -280,7 +418,43 @@ void UALSWeaponFireComponent::Reload()
 	StopFiring();
 
 	bIsReloading = true;
-	UE_LOG(LogTemp, Log, TEXT("ALSWeaponFireComponent: reloading (%.1fs, no reload animation available yet - see AGENTS.md)"), Stats->ReloadSeconds);
+
+	if (ALSChar && ALSChar->HeldObjectRoot)
+	{
+		SavedHeldObjectRelativeLocation = ALSChar->HeldObjectRoot->GetRelativeLocation();
+		SavedHeldObjectRelativeRotation = ALSChar->HeldObjectRoot->GetRelativeRotation();
+		bHeldObjectTransformSaved = true;
+
+		if (!Stats->ReloadHeldObjectLocationOffset.IsZero() || !Stats->ReloadHeldObjectRotationOffset.IsZero())
+		{
+			ALSChar->HeldObjectRoot->SetRelativeLocation(SavedHeldObjectRelativeLocation + Stats->ReloadHeldObjectLocationOffset);
+			ALSChar->HeldObjectRoot->SetRelativeRotation(SavedHeldObjectRelativeRotation + Stats->ReloadHeldObjectRotationOffset);
+		}
+	}
+
+	if (Stats->ReloadAnimation && ALSChar)
+	{
+		if (USkeletalMeshComponent* BodyMesh = ALSChar->GetMesh())
+		{
+			if (UAnimInstance* AnimInstance = BodyMesh->GetAnimInstance())
+			{
+				// Scale playback so the animation always finishes exactly
+				// when ReloadSeconds elapses (i.e. when ammo actually
+				// refills via FinishReload's timer), regardless of how
+				// ReloadSeconds is tuned relative to the animation's own
+				// authored length - keeps the visual and the gameplay
+				// timing from drifting apart.
+				const float AnimLength = Stats->ReloadAnimation->GetPlayLength();
+				const float PlayRate = (AnimLength > KINDA_SMALL_NUMBER && Stats->ReloadSeconds > KINDA_SMALL_NUMBER)
+					? AnimLength / Stats->ReloadSeconds
+					: 1.0f;
+				AnimInstance->PlaySlotAnimationAsDynamicMontage(Stats->ReloadAnimation, ReloadMontageSlotName, 0.25f, 0.25f, PlayRate, 1);
+			}
+		}
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("ALSWeaponFireComponent: reloading (%.1fs)%s"), Stats->ReloadSeconds,
+		Stats->ReloadAnimation ? TEXT("") : TEXT(" - no ReloadAnimation set for this weapon"));
 
 	if (UWorld* World = GetWorld())
 	{
@@ -296,7 +470,277 @@ void UALSWeaponFireComponent::FinishReload()
 	bIsReloading = false;
 	CurrentAmmoInMagazine = Stats ? Stats->MagazineSize : CurrentAmmoInMagazine;
 
+	if (bHeldObjectTransformSaved && ALSChar && ALSChar->HeldObjectRoot)
+	{
+		ALSChar->HeldObjectRoot->SetRelativeLocation(SavedHeldObjectRelativeLocation);
+		ALSChar->HeldObjectRoot->SetRelativeRotation(SavedHeldObjectRelativeRotation);
+	}
+	bHeldObjectTransformSaved = false;
+
 	UE_LOG(LogTemp, Log, TEXT("ALSWeaponFireComponent: reload complete, %d rounds"), CurrentAmmoInMagazine);
+}
+
+void UALSWeaponFireComponent::DebugStartReloadOffsetTuning()
+{
+	if (bDebugTuningReloadOffset)
+	{
+		return;
+	}
+
+	AALSCharacter* ALSChar = Cast<AALSCharacter>(GetOwner());
+	if (!ALSChar)
+	{
+		return;
+	}
+
+	StopFiring();
+	bDebugTuningReloadOffset = true;
+	bDebugReloadLoopEnabled = true;
+	bDebugReloadFrozen = false;
+
+	// Force the Rifle overlay so the Rifle entry (and its ReloadAnimation)
+	// is what's active, regardless of whatever is currently equipped.
+	ALSChar->SetOverlayState(EALSOverlayState::Rifle);
+
+	if (UCharacterMovementComponent* Movement = ALSChar->GetCharacterMovement())
+	{
+		SavedMovementMode = Movement->MovementMode;
+		// Camera look is untouched (still bound directly to the controller,
+		// not through movement) so you can still orbit and inspect the pose
+		// from any angle while tuning.
+		Movement->DisableMovement();
+	}
+
+	if (APlayerController* PC = Cast<APlayerController>(ALSChar->GetController()))
+	{
+		if (DebugReloadTuningWidgetClass && !DebugReloadTuningWidgetInstance)
+		{
+			DebugReloadTuningWidgetInstance = CreateWidget<UUserWidget>(PC, DebugReloadTuningWidgetClass);
+		}
+
+		if (DebugReloadTuningWidgetInstance)
+		{
+			if (UALSRifleReloadTuningWidget* TuningWidget = Cast<UALSRifleReloadTuningWidget>(DebugReloadTuningWidgetInstance))
+			{
+				TuningWidget->SetTargetComponent(this);
+			}
+
+			DebugReloadTuningWidgetInstance->AddToViewport();
+
+			FInputModeGameAndUI InputMode;
+			InputMode.SetWidgetToFocus(DebugReloadTuningWidgetInstance->TakeWidget());
+			InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+			PC->SetInputMode(InputMode);
+		}
+		else
+		{
+			PC->SetInputMode(FInputModeGameAndUI());
+		}
+
+		PC->SetShowMouseCursor(true);
+	}
+
+	if (ALSChar->HeldObjectRoot)
+	{
+		SavedHeldObjectRelativeLocation = ALSChar->HeldObjectRoot->GetRelativeLocation();
+		SavedHeldObjectRelativeRotation = ALSChar->HeldObjectRoot->GetRelativeRotation();
+		bHeldObjectTransformSaved = true;
+	}
+
+	DebugReplayReloadAnimLoop();
+
+	UE_LOG(LogTemp, Log, TEXT("ALSWeaponFireComponent: started reload offset tuning"));
+}
+
+void UALSWeaponFireComponent::DebugReplayReloadAnimLoop()
+{
+	if (!bDebugTuningReloadOffset)
+	{
+		return;
+	}
+
+	AALSCharacter* ALSChar = Cast<AALSCharacter>(GetOwner());
+	const FALSWeaponAmmoStats* Stats = AmmoStatsByOverlayState.Find(EALSOverlayState::Rifle);
+	if (!ALSChar || !Stats || !Stats->ReloadAnimation)
+	{
+		return;
+	}
+
+	float AnimLength = 1.0f;
+	if (USkeletalMeshComponent* BodyMesh = ALSChar->GetMesh())
+	{
+		if (UAnimInstance* AnimInstance = BodyMesh->GetAnimInstance())
+		{
+			AnimLength = Stats->ReloadAnimation->GetPlayLength();
+			DebugReloadTuningMontage = AnimInstance->PlaySlotAnimationAsDynamicMontage(Stats->ReloadAnimation, ReloadMontageSlotName, 0.1f, 0.1f, 1.0f, 1);
+		}
+	}
+
+	if (bDebugReloadLoopEnabled)
+	{
+		if (UWorld* World = GetWorld())
+		{
+			// Re-trigger a fresh single play right as this one ends - manual
+			// looping rather than relying on LoopCount, so DebugStopReloadOffsetTuning
+			// (or ToggleDebugReloadAnimLoop) can cleanly break the cycle by
+			// just clearing this timer.
+			World->GetTimerManager().SetTimer(DebugReloadLoopTimerHandle, this,
+				&UALSWeaponFireComponent::DebugReplayReloadAnimLoop, FMath::Max(AnimLength, 0.1f), /*bLoop=*/false);
+		}
+	}
+}
+
+void UALSWeaponFireComponent::ToggleDebugReloadAnimLoop()
+{
+	bDebugReloadLoopEnabled = !bDebugReloadLoopEnabled;
+
+	if (bDebugReloadLoopEnabled && bDebugTuningReloadOffset)
+	{
+		// The timer chain died when looping was turned off - kick a fresh
+		// play rather than waiting for a repeat that will never come.
+		DebugReplayReloadAnimLoop();
+	}
+	else if (!bDebugReloadLoopEnabled)
+	{
+		if (UWorld* World = GetWorld())
+		{
+			World->GetTimerManager().ClearTimer(DebugReloadLoopTimerHandle);
+		}
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("ALSWeaponFireComponent: reload anim loop %s"), bDebugReloadLoopEnabled ? TEXT("enabled") : TEXT("disabled"));
+}
+
+void UALSWeaponFireComponent::ToggleDebugReloadFreeze()
+{
+	AALSCharacter* ALSChar = Cast<AALSCharacter>(GetOwner());
+	UAnimInstance* AnimInstance = (ALSChar && ALSChar->GetMesh()) ? ALSChar->GetMesh()->GetAnimInstance() : nullptr;
+	if (!AnimInstance || !DebugReloadTuningMontage)
+	{
+		return;
+	}
+
+	bDebugReloadFrozen = !bDebugReloadFrozen;
+
+	if (UWorld* World = GetWorld())
+	{
+		if (bDebugReloadFrozen)
+		{
+			AnimInstance->Montage_Pause(DebugReloadTuningMontage);
+			World->GetTimerManager().PauseTimer(DebugReloadLoopTimerHandle);
+		}
+		else
+		{
+			AnimInstance->Montage_Resume(DebugReloadTuningMontage);
+			World->GetTimerManager().UnPauseTimer(DebugReloadLoopTimerHandle);
+		}
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("ALSWeaponFireComponent: reload anim %s"), bDebugReloadFrozen ? TEXT("frozen") : TEXT("unfrozen"));
+}
+
+void UALSWeaponFireComponent::DebugStopReloadOffsetTuning()
+{
+	if (!bDebugTuningReloadOffset)
+	{
+		return;
+	}
+	bDebugTuningReloadOffset = false;
+	bDebugReloadFrozen = false;
+	DebugReloadTuningMontage = nullptr;
+
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(DebugReloadLoopTimerHandle);
+	}
+
+	AALSCharacter* ALSChar = Cast<AALSCharacter>(GetOwner());
+	if (ALSChar)
+	{
+		if (UCharacterMovementComponent* Movement = ALSChar->GetCharacterMovement())
+		{
+			Movement->SetMovementMode(SavedMovementMode);
+		}
+
+		if (bHeldObjectTransformSaved && ALSChar->HeldObjectRoot)
+		{
+			ALSChar->HeldObjectRoot->SetRelativeLocation(SavedHeldObjectRelativeLocation);
+			ALSChar->HeldObjectRoot->SetRelativeRotation(SavedHeldObjectRelativeRotation);
+		}
+
+		if (USkeletalMeshComponent* BodyMesh = ALSChar->GetMesh())
+		{
+			if (UAnimInstance* AnimInstance = BodyMesh->GetAnimInstance())
+			{
+				AnimInstance->StopSlotAnimation(0.1f, ReloadMontageSlotName);
+			}
+		}
+
+		if (APlayerController* PC = Cast<APlayerController>(ALSChar->GetController()))
+		{
+			PC->SetShowMouseCursor(false);
+			PC->SetInputMode(FInputModeGameOnly());
+		}
+	}
+	bHeldObjectTransformSaved = false;
+
+	if (DebugReloadTuningWidgetInstance)
+	{
+		DebugReloadTuningWidgetInstance->RemoveFromParent();
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("ALSWeaponFireComponent: stopped reload offset tuning"));
+}
+
+void UALSWeaponFireComponent::ToggleDebugReloadOffsetTuning()
+{
+	if (bDebugTuningReloadOffset)
+	{
+		DebugStopReloadOffsetTuning();
+	}
+	else
+	{
+		DebugStartReloadOffsetTuning();
+	}
+}
+
+FVector UALSWeaponFireComponent::DebugGetReloadLocationOffset() const
+{
+	const FALSWeaponAmmoStats* Stats = AmmoStatsByOverlayState.Find(EALSOverlayState::Rifle);
+	return Stats ? Stats->ReloadHeldObjectLocationOffset : FVector::ZeroVector;
+}
+
+FRotator UALSWeaponFireComponent::DebugGetReloadRotationOffset() const
+{
+	const FALSWeaponAmmoStats* Stats = AmmoStatsByOverlayState.Find(EALSOverlayState::Rifle);
+	return Stats ? Stats->ReloadHeldObjectRotationOffset : FRotator::ZeroRotator;
+}
+
+void UALSWeaponFireComponent::DebugSetReloadLocationOffset(FVector NewOffset)
+{
+	if (FALSWeaponAmmoStats* Stats = AmmoStatsByOverlayState.Find(EALSOverlayState::Rifle))
+	{
+		Stats->ReloadHeldObjectLocationOffset = NewOffset;
+	}
+}
+
+void UALSWeaponFireComponent::DebugSetReloadRotationOffset(FRotator NewOffset)
+{
+	if (FALSWeaponAmmoStats* Stats = AmmoStatsByOverlayState.Find(EALSOverlayState::Rifle))
+	{
+		Stats->ReloadHeldObjectRotationOffset = NewOffset;
+	}
+}
+
+void UALSWeaponFireComponent::DebugCopyReloadOffsetsToClipboard()
+{
+	const FVector Loc = DebugGetReloadLocationOffset();
+	const FRotator Rot = DebugGetReloadRotationOffset();
+	const FString Text = FString::Printf(
+		TEXT("Location=(X=%.2f,Y=%.2f,Z=%.2f) Rotation=(Pitch=%.2f,Yaw=%.2f,Roll=%.2f)"),
+		Loc.X, Loc.Y, Loc.Z, Rot.Pitch, Rot.Yaw, Rot.Roll);
+	FPlatformApplicationMisc::ClipboardCopy(*Text);
+	UE_LOG(LogTemp, Log, TEXT("ALSWeaponFireComponent: copied to clipboard: %s"), *Text);
 }
 
 float UALSWeaponFireComponent::ComputeCurrentSpreadDegrees(const AALSBaseCharacter* Character) const
