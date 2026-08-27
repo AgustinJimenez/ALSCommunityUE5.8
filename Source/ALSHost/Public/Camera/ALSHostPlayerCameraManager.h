@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Character/ALSPlayerCameraManager.h"
+#include "Library/ALSCharacterEnumLibrary.h"
 #include "ALSHostPlayerCameraManager.generated.h"
 
 // ALS computes the third-person camera's location/rotation/FOV entirely in

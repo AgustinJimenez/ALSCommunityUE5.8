@@ -12,7 +12,9 @@ public class ALSHost : ModuleRules
 			"EnhancedInput",  // For UInputAction/UInputMappingContext, weapon fire binding
 			"ALSV4_CPP",      // For AALSCharacter, ALS enums (gait/rotation mode)
 			"UMG",            // For the reload-offset debug tuning widget
-			"ApplicationCore" // For FPlatformApplicationMisc::ClipboardCopy (debug tuning "copy values" button)
+			"ApplicationCore",// For FPlatformApplicationMisc::ClipboardCopy (debug tuning "copy values" button)
+			"Slate",          // For FReply (native mouse handling in UALSOverlayStateOptionWidget)
+			"SlateCore"
 		});
 	}
 }

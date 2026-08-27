@@ -169,6 +169,17 @@ protected:
 	void HandleDebugReloadTuningHoldThresholdReached();
 	void HandleCameraZoomInput(const FInputActionValue& Value);
 
+	// ALS's own Q-held debug overlay menu has a scroll-to-cycle interaction
+	// that doesn't visually respond (traced deep into ALS's own Blueprints
+	// with no fix found within scope - see
+	// AGENT_TASKS/0002_q_menu_scroll_not_working.md). Rather than fix that,
+	// make the menu mouse-clickable instead: while Q is held, show the
+	// cursor and suspend ALS's DefaultInputMappingContext entirely (camera
+	// look + movement), so nothing fights the user's mouse clicks; restore
+	// both on release.
+	void HandleDebugOverlayMenuOpened(const FInputActionValue& Value);
+	void HandleDebugOverlayMenuClosed(const FInputActionValue& Value);
+
 	// A pawn's BeginPlay typically runs before its PlayerController actually
 	// possesses it, so GetController() is often still null when this
 	// component's own BeginPlay runs - binding only there silently does
@@ -218,6 +229,37 @@ protected:
 	// AALSHostPlayerCameraManager::AddZoomInput().
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "ALS|Weapon|Input")
 	TObjectPtr<UInputAction> CameraZoomInputAction;
+
+	// Its own mapping context, separate from FireInputMappingContext. This
+	// was originally added on a hunch that zoom was stealing MouseWheelAxis
+	// from ALS's own Q-held debug overlay menu (DebugOverlayMenuCycleAction) -
+	// confirmed WRONG by an isolation test (disabling zoom entirely didn't
+	// fix the menu; see AGENT_TASKS/0002_q_menu_scroll_not_working.md).
+	// Left as its own context anyway since it's a reasonable separation
+	// regardless, just not load-bearing for that bug.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "ALS|Weapon|Input")
+	TObjectPtr<UInputMappingContext> CameraZoomInputMappingContext;
+
+	// Same InputAction asset ALS's own AALSPlayerController binds
+	// DebugOpenOverlayMenuAction to (Q) - reused directly rather than
+	// duplicated, bound here purely so this component gets its own
+	// Started/Completed events for showing the mouse cursor and suspending
+	// gameplay input while the menu is open. See
+	// HandleDebugOverlayMenuOpened/Closed.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "ALS|Weapon|Debug")
+	TObjectPtr<UInputAction> DebugOverlayMenuInputAction;
+
+	// Mapping context for DebugOverlayMenuInputAction. Just needs a Q
+	// mapping - priority doesn't matter much since this doesn't need to
+	// win/block anything, it only observes press/release.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "ALS|Weapon|Debug")
+	TObjectPtr<UInputMappingContext> DebugOverlayMenuInputMappingContext;
+
+	// Replacement prop-picker menu shown while Q is held (see
+	// UALSDebugPropMenuWidget) - ALS's own OverlayStateSwitcher menu never
+	// actually populated its button list or had click/hover implemented.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "ALS|Weapon|Debug")
+	TSubclassOf<class UALSDebugPropMenuWidget> DebugPropMenuWidgetClass;
 
 	// Widget class shown while reload-offset tuning is active. Expected to
 	// expose sliders/buttons that call DebugGetReloadLocationOffset,
@@ -352,6 +394,9 @@ private:
 
 	UPROPERTY()
 	TObjectPtr<UUserWidget> DebugReloadTuningWidgetInstance;
+
+	UPROPERTY()
+	TObjectPtr<class UALSDebugPropMenuWidget> DebugPropMenuWidgetInstance;
 
 	// HeldObjectRoot's relative transform captured right before Reload()
 	// applies ReloadHeldObjectLocationOffset/RotationOffset, so

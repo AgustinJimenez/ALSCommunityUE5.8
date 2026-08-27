@@ -11,6 +11,7 @@
 #include "InputAction.h"
 #include "InputMappingContext.h"
 #include "GameFramework/PlayerController.h"
+#include "Character/ALSPlayerController.h"
 #include "Engine/LocalPlayer.h"
 #include "Engine/World.h"
 #include "TimerManager.h"
@@ -22,7 +23,9 @@
 #include "Blueprint/UserWidget.h"
 #include "HAL/PlatformApplicationMisc.h"
 #include "UI/ALSRifleReloadTuningWidget.h"
+#include "UI/ALSDebugPropMenuWidget.h"
 #include "Camera/ALSHostPlayerCameraManager.h"
+#include "InputCoreTypes.h"
 
 // Defaults to true while this feature is under active development, since
 // the editor gets restarted frequently for rebuilds and this CVar (like all
@@ -149,20 +152,49 @@ void UALSWeaponFireComponent::TrySetupInput()
 		EIC->BindAction(DebugReloadTuningInputAction, ETriggerEvent::Canceled, this, &UALSWeaponFireComponent::HandleDebugReloadTuningReleased);
 	}
 
-	if (CameraZoomInputAction)
+	// Confirmed via isolation test (zoom fully disabled, Q+scroll still
+	// didn't move the overlay menu selector) that zoom is NOT the cause of
+	// the Q-held debug overlay menu's mouse-wheel cycle not working - that
+	// is a pre-existing/environmental issue, unrelated to anything in this
+	// component. See AGENT_TASKS/0001_rifle_reload_gun_offset.md.
+	static const bool bDebugZoomTemporarilyDisabled = false;
+	if (CameraZoomInputAction && !bDebugZoomTemporarilyDisabled)
 	{
 		EIC->BindAction(CameraZoomInputAction, ETriggerEvent::Triggered, this, &UALSWeaponFireComponent::HandleCameraZoomInput);
 	}
 
+	if (DebugOverlayMenuInputAction)
+	{
+		EIC->BindAction(DebugOverlayMenuInputAction, ETriggerEvent::Started, this, &UALSWeaponFireComponent::HandleDebugOverlayMenuOpened);
+		EIC->BindAction(DebugOverlayMenuInputAction, ETriggerEvent::Completed, this, &UALSWeaponFireComponent::HandleDebugOverlayMenuClosed);
+		EIC->BindAction(DebugOverlayMenuInputAction, ETriggerEvent::Canceled, this, &UALSWeaponFireComponent::HandleDebugOverlayMenuClosed);
+	}
+
 	bInputBound = true;
 
-	if (FireInputMappingContext)
+	if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(PC->GetLocalPlayer()))
 	{
-		if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(PC->GetLocalPlayer()))
+		FModifyContextOptions Options;
+		Options.bForceImmediately = true;
+
+		if (FireInputMappingContext)
 		{
-			FModifyContextOptions Options;
-			Options.bForceImmediately = true;
 			Subsystem->AddMappingContext(FireInputMappingContext, 10, Options);
+		}
+
+		if (CameraZoomInputMappingContext && !bDebugZoomTemporarilyDisabled)
+		{
+			// Below ALS's own DefaultInputMappingContext (1) and
+			// DebugInputMappingContext (0) - see the property comment on
+			// CameraZoomInputMappingContext for why this needs to be its
+			// own low-priority context rather than living in
+			// FireInputMappingContext.
+			Subsystem->AddMappingContext(CameraZoomInputMappingContext, -1, Options);
+		}
+
+		if (DebugOverlayMenuInputMappingContext)
+		{
+			Subsystem->AddMappingContext(DebugOverlayMenuInputMappingContext, -1, Options);
 		}
 	}
 
@@ -229,10 +261,126 @@ void UALSWeaponFireComponent::HandleCameraZoomInput(const FInputActionValue& Val
 
 	if (APlayerController* PC = Cast<APlayerController>(ALSChar->GetController()))
 	{
+		// Confirmed via diagnostic logging that this handler already
+		// receives scroll input correctly even while Q is held, and that
+		// ALS's own debug overlay-cycle menu not responding to scroll is a
+		// pre-existing bug in ALS's own Blueprints (traced through 4 layers,
+		// see AGENT_TASKS/0002_q_menu_scroll_not_working.md) - not an input
+		// routing conflict. Still worth skipping zoom while Q is held so
+		// the camera doesn't zoom while the menu is up; the actual click-
+		// based menu fix lives in HandleDebugOverlayMenuOpened/Closed.
+		if (PC->IsInputKeyDown(EKeys::Q))
+		{
+			return;
+		}
+
 		if (AALSHostPlayerCameraManager* CamMgr = Cast<AALSHostPlayerCameraManager>(PC->PlayerCameraManager))
 		{
 			CamMgr->AddZoomInput(Value.Get<float>());
 		}
+	}
+}
+
+void UALSWeaponFireComponent::HandleDebugOverlayMenuOpened(const FInputActionValue& Value)
+{
+	AALSCharacter* ALSChar = Cast<AALSCharacter>(GetOwner());
+	if (!ALSChar)
+	{
+		return;
+	}
+
+	AALSPlayerController* PC = Cast<AALSPlayerController>(ALSChar->GetController());
+	if (!PC)
+	{
+		return;
+	}
+
+	PC->SetShowMouseCursor(true);
+	PC->SetInputMode(FInputModeGameAndUI());
+
+	if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(PC->GetLocalPlayer()))
+	{
+		// Suspends camera look + movement (ALS's own context) AND this
+		// component's own FireInputMappingContext, which binds Fire to
+		// LeftMouseButton - without this, clicking a menu option would
+		// also fire the weapon underneath the cursor. CameraZoomInputMappingContext
+		// is left active but harmless (HandleCameraZoomInput already
+		// no-ops while Q is held).
+		//
+		// Also suspends PC->DebugInputMappingContext: ALS's own DebugComponent
+		// still has a live OpenOverlayMenu(bValue) event bound to the same Q
+		// action via this context. Its "menu closed" branch calls
+		// SelectOverlayState on its own (broken/never-updated) OverlayStateSwitcher
+		// widget, which reverts whatever overlay state we just picked back to
+		// that widget's stale internal selection the instant Q is released.
+		// Traced live via read_event_graph_detailed on DebugComponent's
+		// EventGraph - confirmed, not theoretical. Removing this context
+		// entirely stops ALS's own menu logic from running at all while our
+		// replacement menu is open.
+		if (PC->DefaultInputMappingContext)
+		{
+			Subsystem->RemoveMappingContext(PC->DefaultInputMappingContext);
+		}
+		if (PC->DebugInputMappingContext)
+		{
+			Subsystem->RemoveMappingContext(PC->DebugInputMappingContext);
+		}
+		if (FireInputMappingContext)
+		{
+			Subsystem->RemoveMappingContext(FireInputMappingContext);
+		}
+	}
+
+	if (DebugPropMenuWidgetClass && !DebugPropMenuWidgetInstance)
+	{
+		DebugPropMenuWidgetInstance = CreateWidget<UALSDebugPropMenuWidget>(PC, DebugPropMenuWidgetClass);
+	}
+
+	if (DebugPropMenuWidgetInstance)
+	{
+		DebugPropMenuWidgetInstance->AddToViewport();
+	}
+}
+
+void UALSWeaponFireComponent::HandleDebugOverlayMenuClosed(const FInputActionValue& Value)
+{
+	AALSCharacter* ALSChar = Cast<AALSCharacter>(GetOwner());
+	if (!ALSChar)
+	{
+		return;
+	}
+
+	AALSPlayerController* PC = Cast<AALSPlayerController>(ALSChar->GetController());
+	if (!PC)
+	{
+		return;
+	}
+
+	PC->SetShowMouseCursor(false);
+	PC->SetInputMode(FInputModeGameOnly());
+
+	if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(PC->GetLocalPlayer()))
+	{
+		FModifyContextOptions Options;
+		Options.bForceImmediately = true;
+
+		if (PC->DefaultInputMappingContext)
+		{
+			Subsystem->AddMappingContext(PC->DefaultInputMappingContext, 1, Options);
+		}
+		if (PC->DebugInputMappingContext)
+		{
+			Subsystem->AddMappingContext(PC->DebugInputMappingContext, 0, Options);
+		}
+		if (FireInputMappingContext)
+		{
+			Subsystem->AddMappingContext(FireInputMappingContext, 10, Options);
+		}
+	}
+
+	if (DebugPropMenuWidgetInstance)
+	{
+		DebugPropMenuWidgetInstance->RemoveFromParent();
 	}
 }
 
