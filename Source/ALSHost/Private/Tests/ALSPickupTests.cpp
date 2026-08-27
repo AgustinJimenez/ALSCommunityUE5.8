@@ -123,6 +123,7 @@ TEST_CLASS(ALSPickupTests, "ALSHost.Inventory")
 
 				AALSWeaponPickup& WeaponPickup = Spawner->SpawnActorAt<AALSWeaponPickup>(FVector(FarAwayOffset, 0.f, 0.f), FRotator::ZeroRotator);
 				WeaponPickup.OverlayStateToEquip = EALSOverlayState::Rifle;
+				WeaponPickup.WeaponItemID = TEXT("Weapon_Rifle");
 				WeaponPickup.AmmoItemID = TEXT("Ammo_Rifle");
 				WeaponPickup.BonusAmmoQuantity = 60;
 				WeaponPickup.SetActorLocation(FVector::ZeroVector, /*bSweep=*/true);
@@ -134,6 +135,17 @@ TEST_CLASS(ALSPickupTests, "ALSHost.Inventory")
 				UALSInventoryComponent* Inventory = Character->FindComponentByClass<UALSInventoryComponent>();
 				ASSERT_THAT(IsNotNull(Inventory));
 				ASSERT_THAT(IsTrue(Inventory->HasItem(TEXT("Ammo_Rifle"), 60)));
+
+				// Picking the weapon back up should also have recorded it as
+				// an equippable inventory entry - lets the player re-equip it
+				// from the inventory panel later (see UALSInventoryWidget)
+				// even after switching to a different overlay state.
+				ASSERT_THAT(IsTrue(Inventory->HasItem(TEXT("Weapon_Rifle"), 1)));
+				const FALSInventoryItem* WeaponItem = Inventory->GetItems().FindByPredicate(
+					[](const FALSInventoryItem& Item) { return Item.ItemID == TEXT("Weapon_Rifle"); });
+				ASSERT_THAT(IsNotNull(WeaponItem));
+				ASSERT_THAT(IsTrue(WeaponItem->bEquippable));
+				ASSERT_THAT(IsTrue(WeaponItem->EquipOverlayState == EALSOverlayState::Rifle));
 			});
 	}
 };

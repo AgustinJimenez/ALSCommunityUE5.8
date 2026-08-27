@@ -26,9 +26,14 @@ bool AALSWeaponPickup::OnPickedUp(APawn* Pawn)
 
 	ALSChar->SetOverlayState(OverlayStateToEquip);
 
-	if (BonusAmmoQuantity > 0 && !AmmoItemID.IsNone())
+	if (UALSInventoryComponent* Inventory = ALSChar->FindComponentByClass<UALSInventoryComponent>())
 	{
-		if (UALSInventoryComponent* Inventory = ALSChar->FindComponentByClass<UALSInventoryComponent>())
+		if (!WeaponItemID.IsNone())
+		{
+			Inventory->AddItem(WeaponItemID, WeaponDisplayName, /*Quantity=*/1, /*MaxStack=*/1, /*bEquippable=*/true, OverlayStateToEquip);
+		}
+
+		if (BonusAmmoQuantity > 0 && !AmmoItemID.IsNone())
 		{
 			Inventory->AddItem(AmmoItemID, AmmoDisplayName, BonusAmmoQuantity, TNumericLimits<int32>::Max());
 		}

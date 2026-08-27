@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
+#include "Library/ALSCharacterEnumLibrary.h"
 #include "ALSInventoryComponent.generated.h"
 
 class UInputAction;
@@ -24,6 +25,15 @@ struct FALSInventoryItem
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ALS|Inventory")
 	int32 MaxStack = 99;
+
+	// If true, clicking this item's row in the inventory panel equips
+	// EquipOverlayState (e.g. a weapon item picked up via AALSWeaponPickup).
+	// Not every item is equippable - ammo, for instance, is not.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ALS|Inventory")
+	bool bEquippable = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ALS|Inventory")
+	EALSOverlayState EquipOverlayState = EALSOverlayState::Default;
 };
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FALSOnInventoryChanged);
@@ -47,12 +57,12 @@ public:
 	FALSOnInventoryChanged OnInventoryChanged;
 
 	// Adds up to Quantity of ItemID, respecting MaxStack (first time an item
-	// is added, its DisplayName/MaxStack are recorded; later adds of the same
-	// ItemID reuse the stored MaxStack regardless of what's passed).
-	// Returns how many were actually added (may be less than Quantity if the
-	// stack filled up).
+	// is added, its DisplayName/MaxStack/bEquippable/EquipOverlayState are
+	// recorded; later adds of the same ItemID reuse the stored values
+	// regardless of what's passed). Returns how many were actually added
+	// (may be less than Quantity if the stack filled up).
 	UFUNCTION(BlueprintCallable, Category = "ALS|Inventory")
-	int32 AddItem(FName ItemID, FText DisplayName, int32 Quantity, int32 MaxStack = 99);
+	int32 AddItem(FName ItemID, FText DisplayName, int32 Quantity, int32 MaxStack = 99, bool bEquippable = false, EALSOverlayState EquipOverlayState = EALSOverlayState::Default);
 
 	// Removes up to Quantity of ItemID. Returns how many were actually
 	// removed (may be less than Quantity if fewer were held).

@@ -24,6 +24,18 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ALS|Pickup")
 	EALSOverlayState OverlayStateToEquip = EALSOverlayState::Rifle;
 
+	// Also recorded as an equippable entry in UALSInventoryComponent (not
+	// just equipped immediately) - MaxStack 1, since carrying two of the
+	// same weapon doesn't mean anything yet (no multi-weapon-carry system,
+	// see AALSWeaponPickup.cpp). Lets the player re-equip this weapon later
+	// from the inventory panel (click a row to equip - see
+	// UALSInventoryWidget) even after switching to something else.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ALS|Pickup")
+	FName WeaponItemID = TEXT("Weapon_Rifle");
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ALS|Pickup")
+	FText WeaponDisplayName;
+
 	// Must match the AmmoItemID configured on UALSWeaponFireComponent's
 	// AmmoStatsByOverlayState entry for OverlayStateToEquip, or the bonus
 	// ammo granted here won't be usable to reload this weapon.

@@ -153,7 +153,7 @@ void UALSInventoryComponent::HandleToggleInventoryUI(const FInputActionValue& Va
 	}
 }
 
-int32 UALSInventoryComponent::AddItem(FName ItemID, FText DisplayName, int32 Quantity, int32 MaxStack)
+int32 UALSInventoryComponent::AddItem(FName ItemID, FText DisplayName, int32 Quantity, int32 MaxStack, bool bEquippable, EALSOverlayState EquipOverlayState)
 {
 	if (Quantity <= 0 || ItemID.IsNone())
 	{
@@ -169,6 +169,8 @@ int32 UALSInventoryComponent::AddItem(FName ItemID, FText DisplayName, int32 Qua
 		NewItem.DisplayName = DisplayName;
 		NewItem.MaxStack = MaxStack;
 		NewItem.Quantity = 0;
+		NewItem.bEquippable = bEquippable;
+		NewItem.EquipOverlayState = EquipOverlayState;
 		Existing = &Items.Add_GetRef(NewItem);
 	}
 
