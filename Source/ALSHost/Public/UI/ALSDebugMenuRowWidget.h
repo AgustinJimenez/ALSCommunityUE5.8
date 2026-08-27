@@ -27,6 +27,12 @@ public:
 	// Blueprint - rows are only ever constructed and wired from C++.
 	void SetOnClicked(TFunction<void()> InHandler);
 
+	// Stores a handler run on right-click, receiving the click's absolute
+	// screen-space position - callers that pop up a context menu need this
+	// to position it. Optional; a row with no right-click handler set just
+	// ignores right-clicks (falls through to Super, no context menu).
+	void SetOnRightClicked(TFunction<void(const FVector2D&)> InHandler);
+
 protected:
 	virtual void NativeConstruct() override;
 	virtual FReply NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
@@ -41,4 +47,5 @@ protected:
 
 private:
 	TFunction<void()> ClickHandler;
+	TFunction<void(const FVector2D&)> RightClickHandler;
 };

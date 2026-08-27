@@ -22,6 +22,11 @@ void UALSDebugMenuRowWidget::SetOnClicked(TFunction<void()> InHandler)
 	ClickHandler = MoveTemp(InHandler);
 }
 
+void UALSDebugMenuRowWidget::SetOnRightClicked(TFunction<void(const FVector2D&)> InHandler)
+{
+	RightClickHandler = MoveTemp(InHandler);
+}
+
 void UALSDebugMenuRowWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
@@ -41,6 +46,15 @@ FReply UALSDebugMenuRowWidget::NativeOnMouseButtonDown(const FGeometry& InGeomet
 			ClickHandler();
 		}
 		return FReply::Handled();
+	}
+
+	if (InMouseEvent.GetEffectingButton() == EKeys::RightMouseButton)
+	{
+		if (RightClickHandler)
+		{
+			RightClickHandler(InMouseEvent.GetScreenSpacePosition());
+			return FReply::Handled();
+		}
 	}
 
 	return Super::NativeOnMouseButtonDown(InGeometry, InMouseEvent);

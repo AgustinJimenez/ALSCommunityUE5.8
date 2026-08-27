@@ -2,9 +2,13 @@
 
 #include "Components/VerticalBox.h"
 #include "Components/TextBlock.h"
+#include "Components/CanvasPanel.h"
+#include "Components/CanvasPanelSlot.h"
 #include "Inventory/ALSInventoryComponent.h"
 #include "UI/ALSDebugMenuRowWidget.h"
+#include "UI/ALSInventoryContextMenuWidget.h"
 #include "Character/ALSCharacter.h"
+#include "Blueprint/SlateBlueprintLibrary.h"
 
 void UALSInventoryWidget::NativeConstruct()
 {
@@ -31,6 +35,14 @@ void UALSInventoryWidget::RefreshItemsList()
 	if (!ItemsList)
 	{
 		return;
+	}
+
+	// Rows are about to be torn down and rebuilt - the context menu was
+	// popped up relative to a row that may no longer exist afterward, so
+	// collapse it rather than leave it floating over a stale position.
+	if (ContextMenu)
+	{
+		ContextMenu->SetVisibility(ESlateVisibility::Collapsed);
 	}
 
 	ItemsList->ClearChildren();
@@ -69,13 +81,16 @@ void UALSInventoryWidget::RefreshItemsList()
 
 		if (UALSDebugMenuRowWidget* Row = CreateWidget<UALSDebugMenuRowWidget>(GetOwningPlayer(), RowWidgetClass))
 		{
-			const FString Suffix = Item.bEquippable ? TEXT("  [click to equip]") : FString();
+			const FString Suffix = Item.bEquippable ? TEXT("  [right-click]") : FString();
 			Row->SetRowLabel(FText::FromString(FString::Printf(TEXT("%s  x%d%s"), *Item.DisplayName.ToString(), Item.Quantity, *Suffix)));
 
+			// Left-click intentionally does nothing beyond the row's own
+			// hover highlight now - equipping moved to the right-click
+			// context menu's "Equip" option (see ShowContextMenu).
 			if (Item.bEquippable)
 			{
 				const FName ItemID = Item.ItemID;
-				Row->SetOnClicked([this, ItemID]() { HandleRowClicked(ItemID); });
+				Row->SetOnRightClicked([this, ItemID](const FVector2D& ScreenPosition) { ShowContextMenu(ItemID, ScreenPosition); });
 			}
 
 			ItemsList->AddChildToVerticalBox(Row);
@@ -83,9 +98,48 @@ void UALSInventoryWidget::RefreshItemsList()
 	}
 }
 
-void UALSInventoryWidget::HandleRowClicked(FName ItemID)
+void UALSInventoryWidget::ShowContextMenu(FName ItemID, const FVector2D& ScreenPosition)
 {
-	EquipItem(ItemID);
+	if (!ContextMenuWidgetClass || !RootCanvas)
+	{
+		return;
+	}
+
+	if (!ContextMenu)
+	{
+		ContextMenu = CreateWidget<UALSInventoryContextMenuWidget>(GetOwningPlayer(), ContextMenuWidgetClass);
+		if (ContextMenu)
+		{
+			if (UCanvasPanelSlot* MenuSlot = RootCanvas->AddChildToCanvas(ContextMenu))
+			{
+				MenuSlot->SetAnchors(FAnchors(0.f, 0.f));
+				MenuSlot->SetAlignment(FVector2D(0.f, 0.f));
+				MenuSlot->SetAutoSize(true);
+			}
+		}
+	}
+
+	if (!ContextMenu)
+	{
+		return;
+	}
+
+	FVector2D ViewportPosition;
+	USlateBlueprintLibrary::ScreenToViewport(this, ScreenPosition, ViewportPosition);
+
+	if (UCanvasPanelSlot* MenuSlot = Cast<UCanvasPanelSlot>(ContextMenu->Slot))
+	{
+		MenuSlot->SetPosition(ViewportPosition);
+	}
+
+	ContextMenu->Setup([this, ItemID]() {
+		EquipItem(ItemID);
+		if (ContextMenu)
+		{
+			ContextMenu->SetVisibility(ESlateVisibility::Collapsed);
+		}
+	});
+	ContextMenu->SetVisibility(ESlateVisibility::Visible);
 }
 
 bool UALSInventoryWidget::EquipItem(FName ItemID)
