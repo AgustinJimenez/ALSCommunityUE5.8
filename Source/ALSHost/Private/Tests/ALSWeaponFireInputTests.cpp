@@ -181,6 +181,44 @@ TEST_CLASS(ALSWeaponFireInputTests, "ALSHost.Weapon")
 				ASSERT_THAT(IsTrue(bObservedAiming));
 			});
 	}
+
+	TEST_METHOD(PressingFireAction_WhileCrouching_StillFires)
+	{
+		// User report: "i can't shoot while crouching" - turned out to be a
+		// perception issue (user confirmed it does work), not a real block,
+		// but nothing in ALSWeaponFireComponent or ALS's own
+		// StanceAction/OnStanceChanged gates firing on Stance, so this locks
+		// that in against a regression.
+		TestCommandBuilder
+			.StartWhen([this]() { return Spawner.IsValid(); })
+			.Then([this]() {
+				UClass* CharClass = LoadClass<AALSCharacter>(nullptr, TEXT("/ALSV4_CPP/AdvancedLocomotionV4/Blueprints/CharacterLogic/ALS_CharacterBP.ALS_CharacterBP_C"));
+				ASSERT_THAT(IsNotNull(CharClass));
+
+				Shooter = &Spawner->SpawnActorAt<AALSCharacter>(FVector(0.f, 0.f, 100.f), FRotator::ZeroRotator, FActorSpawnParameters(), CharClass);
+				Weapon = Shooter->FindComponentByClass<UALSWeaponFireComponent>();
+				ASSERT_THAT(IsNotNull(Weapon));
+				Shooter->SetOverlayState(EALSOverlayState::Rifle);
+				Shooter->SetStance(EALSStance::Crouching, /*bForce=*/true);
+				ASSERT_THAT(IsTrue(Shooter->GetStance() == EALSStance::Crouching));
+
+				APlayerController* PC = UGameplayStatics::GetPlayerController(&Spawner->GetWorld(), 0);
+				ASSERT_THAT(IsNotNull(PC));
+				PC->Possess(Shooter);
+
+				ShooterActions = MakeUnique<FALSShooterTestActions>(Shooter);
+			})
+			.WaitDelay(FTimespan::FromSeconds(0.2))
+			.Then([this]() {
+				ASSERT_THAT(IsTrue(Shooter->GetStance() == EALSStance::Crouching));
+				ShooterActions->PressFire();
+			})
+			.Until([this]() { return Weapon->GetCurrentAmmoInMagazine() != 0; }, FTimespan::FromSeconds(2.0))
+			.Then([this]() {
+				ASSERT_THAT(IsTrue(Weapon->GetCurrentAmmoInMagazine() == 29));
+				ASSERT_THAT(IsTrue(Shooter->GetStance() == EALSStance::Crouching));
+			});
+	}
 };
 
 #endif // WITH_AUTOMATION_TESTS
