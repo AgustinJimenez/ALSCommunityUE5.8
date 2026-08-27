@@ -397,6 +397,30 @@ void UALSWeaponFireComponent::StartFiring()
 		return;
 	}
 
+	AALSCharacter* ALSChar = Cast<AALSCharacter>(GetOwner());
+	if (ALSChar)
+	{
+		// Enters the same Aiming rotation mode ALS's own manual Aim input
+		// (held Right Mouse Button, AALSBaseCharacter::AimAction) uses -
+		// this is what actually drives the upper-body aim pose, previously
+		// only active while manually aiming, not while just firing. It also
+		// means CanSprint() (which explicitly returns false whenever
+		// RotationMode == Aiming, see ALSBaseCharacter.cpp) blocks sprinting
+		// for the whole duration fire is held, without reimplementing that
+		// rule here - reusing ALS's own logic rather than duplicating it.
+		ALSChar->AimAction(true);
+
+		// Belt-and-suspenders: Gait only actually re-settles on a later
+		// tick after the AimAction() call above changes RotationMode, so
+		// explicitly refuse to start firing at all if the character is
+		// still mid-sprint on the very frame the trigger is pressed,
+		// rather than relying on next-tick timing to catch it.
+		if (ALSChar->GetGait() == EALSGait::Sprinting)
+		{
+			return;
+		}
+	}
+
 	// Fire immediately on press, then repeat at the RPM-derived interval
 	// for as long as the trigger is held.
 	Fire();
@@ -410,6 +434,21 @@ void UALSWeaponFireComponent::StopFiring()
 	if (UWorld* World = GetWorld())
 	{
 		World->GetTimerManager().ClearTimer(FireTimerHandle);
+	}
+
+	if (AALSCharacter* ALSChar = Cast<AALSCharacter>(GetOwner()))
+	{
+		// Don't revert out of Aiming if the player is independently holding
+		// ALS's own manual Aim input (Right Mouse Button) right now - that
+		// hold should keep controlling the rotation mode on its own once we
+		// let go, not get silently cancelled just because firing also
+		// stopped.
+		const APlayerController* PC = Cast<APlayerController>(ALSChar->GetController());
+		const bool bManualAimHeld = PC && PC->IsInputKeyDown(EKeys::RightMouseButton);
+		if (!bManualAimHeld)
+		{
+			ALSChar->AimAction(false);
+		}
 	}
 }
 

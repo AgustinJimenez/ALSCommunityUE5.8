@@ -43,6 +43,7 @@ TEST_CLASS(ALSWeaponFireInputTests, "ALSHost.Weapon")
 	AALSCharacter* Shooter = nullptr;
 	UALSWeaponFireComponent* Weapon = nullptr;
 	TUniquePtr<FALSShooterTestActions> ShooterActions;
+	bool bObservedAiming = false;
 
 	BEFORE_EACH()
 	{
@@ -92,6 +93,96 @@ TEST_CLASS(ALSWeaponFireInputTests, "ALSHost.Weapon")
 			.Until([this]() { return Weapon->GetCurrentAmmoInMagazine() < 30; }, FTimespan::FromSeconds(2.0))
 			.Then([this]() {
 				ASSERT_THAT(IsTrue(Weapon->GetCurrentAmmoInMagazine() < 30));
+			});
+	}
+
+	TEST_METHOD(PressingFireAction_WhileSprinting_DoesNotFire)
+	{
+		TestCommandBuilder
+			.StartWhen([this]() { return Spawner.IsValid(); })
+			.Then([this]() {
+				UClass* CharClass = LoadClass<AALSCharacter>(nullptr, TEXT("/ALSV4_CPP/AdvancedLocomotionV4/Blueprints/CharacterLogic/ALS_CharacterBP.ALS_CharacterBP_C"));
+				ASSERT_THAT(IsNotNull(CharClass));
+
+				Shooter = &Spawner->SpawnActorAt<AALSCharacter>(FVector(0.f, 0.f, 100.f), FRotator::ZeroRotator, FActorSpawnParameters(), CharClass);
+				Weapon = Shooter->FindComponentByClass<UALSWeaponFireComponent>();
+				ASSERT_THAT(IsNotNull(Weapon));
+				Shooter->SetOverlayState(EALSOverlayState::Rifle);
+				Shooter->SetGait(EALSGait::Sprinting, /*bForce=*/true);
+				ASSERT_THAT(IsTrue(Shooter->GetGait() == EALSGait::Sprinting));
+
+				APlayerController* PC = UGameplayStatics::GetPlayerController(&Spawner->GetWorld(), 0);
+				ASSERT_THAT(IsNotNull(PC));
+				PC->Possess(Shooter);
+
+				ShooterActions = MakeUnique<FALSShooterTestActions>(Shooter);
+			})
+			.WaitDelay(FTimespan::FromSeconds(0.2))
+			.Then([this]() {
+				// Ammo is lazily synced to the magazine size only inside a
+				// successful Fire() call - a correctly-blocked attempt never
+				// reaches that, so the meaningful check is "unchanged from
+				// before the press" (0, its never-synced default), not a
+				// hardcoded 30.
+				const int32 AmmoBeforePress = Weapon->GetCurrentAmmoInMagazine();
+				ShooterActions->PressFire();
+				ASSERT_THAT(IsTrue(Weapon->GetCurrentAmmoInMagazine() == AmmoBeforePress));
+			})
+			.WaitDelay(FTimespan::FromSeconds(0.3))
+			.Then([this]() {
+				// Still true a moment later - confirms the block isn't just
+				// a one-frame race, e.g. from full-auto's repeating timer
+				// never getting armed at all.
+				ASSERT_THAT(IsTrue(Weapon->GetCurrentAmmoInMagazine() == 0));
+			});
+	}
+
+	TEST_METHOD(PressingFireAction_WhileNotSprinting_EntersAimingRotationMode)
+	{
+		TestCommandBuilder
+			.StartWhen([this]() { return Spawner.IsValid(); })
+			.Then([this]() {
+				UClass* CharClass = LoadClass<AALSCharacter>(nullptr, TEXT("/ALSV4_CPP/AdvancedLocomotionV4/Blueprints/CharacterLogic/ALS_CharacterBP.ALS_CharacterBP_C"));
+				ASSERT_THAT(IsNotNull(CharClass));
+
+				Shooter = &Spawner->SpawnActorAt<AALSCharacter>(FVector(0.f, 0.f, 100.f), FRotator::ZeroRotator, FActorSpawnParameters(), CharClass);
+				Weapon = Shooter->FindComponentByClass<UALSWeaponFireComponent>();
+				ASSERT_THAT(IsNotNull(Weapon));
+				Shooter->SetOverlayState(EALSOverlayState::Rifle);
+				Shooter->SetGait(EALSGait::Walking, /*bForce=*/true);
+				ASSERT_THAT(IsTrue(Shooter->GetRotationMode() != EALSRotationMode::Aiming));
+
+				APlayerController* PC = UGameplayStatics::GetPlayerController(&Spawner->GetWorld(), 0);
+				ASSERT_THAT(IsNotNull(PC));
+				PC->Possess(Shooter);
+
+				ShooterActions = MakeUnique<FALSShooterTestActions>(Shooter);
+			})
+			.WaitDelay(FTimespan::FromSeconds(0.2))
+			.Then([this]() { ShooterActions->PressFire(); })
+			// PerformAction()'s injection lands on a later tick, not
+			// synchronously within this call - and FInputTestActions'
+			// single injection behaves like a tap rather than a sustained
+			// hold (StopFiring appears to run a tick or two later with no
+			// explicit release injected, reverting RotationMode again), so
+			// Aiming is only true for a single-tick window. Latch it into a
+			// member bool the instant the predicate sees it, rather than
+			// re-checking RotationMode again afterward - by the time any
+			// later .Then() runs, on a later tick, it may have already
+			// reverted even though it was genuinely true a moment earlier.
+			.Until([this]() {
+				if (Shooter->GetRotationMode() == EALSRotationMode::Aiming)
+				{
+					bObservedAiming = true;
+				}
+				return bObservedAiming;
+			}, FTimespan::FromSeconds(1.0))
+			.Then([this]() {
+				// This is the actual bug report this covers: the upper-body
+				// aim pose (driven by RotationMode == Aiming) previously
+				// never activated just from firing while walking, only from
+				// a separate manual Aim hold.
+				ASSERT_THAT(IsTrue(bObservedAiming));
 			});
 	}
 };

@@ -169,6 +169,38 @@ unsaved-content-change-lost-on-force-kill gotcha - see AGENTS.md).
 - Not done: no tracer VFX, no custom bullet mesh, no penetration through
   thin obstacles, no distinct visual/behavior per weapon type (all weapons
   share one `AALSProjectile` class and one speed/gravity setting right now).
+- **Update: standing-still accuracy/recoil tier, and firing now blocks
+  sprinting and drives the aim pose.** User-reported: firing while walking
+  never activated the upper-body aim animation, and firing shouldn't be
+  possible at all while sprinting. Root cause for the first part: spread
+  only had Walking/Running/Sprinting tiers keyed off `GetGait()` - there was
+  no true "standing still" tier at all, and nothing ever put the character
+  into `EALSRotationMode::Aiming` (the mode that actually drives the
+  upper-body aim pose) just from firing, only from ALS's own separate
+  manual Aim input (held Right Mouse Button). Fixed by calling
+  `AALSBaseCharacter::AimAction(true)`/`(false)` (ALS's own existing manual-
+  aim entry point, not reimplemented) from `StartFiring()`/`StopFiring()`,
+  which both activates the aim pose and - since
+  `AALSBaseCharacter::CanSprint()` already returns `false` whenever
+  `RotationMode == Aiming` - naturally blocks sprinting for the whole
+  duration fire is held, with no separate sprint-blocking logic needed.
+  Added `SpreadDegreesStanding` (checked via `IsMoving()`, not `GetGait()`,
+  since a character can be in Walking gait while still accelerating/
+  decelerating rather than actually braced) and `RecoilStandingMultiplier`
+  for the same "stationary is genuinely more accurate" reasoning, on both
+  spread and recoil. Guards against clobbering an independent manual Aim
+  hold on fire-release by checking `PC->IsInputKeyDown(EKeys::RightMouseButton)`
+  first. 3 new tests confirm the standing spread/recoil tuning; 2 more
+  confirm sprinting blocks firing and walking-while-firing reaches Aiming -
+  the latter needed real debugging of the test framework itself (not the
+  production code): `FInputTestActions`' single injected press behaves like
+  a tap, not a sustained hold (no explicit release ever injected, yet
+  `StopFiring()` still runs a tick or two later), so `RotationMode` is only
+  observably `Aiming` for a single tick - checking it after any `.Then()`/
+  `.Until()` step reliably saw it already reverted. Fixed by latching the
+  observation into a member bool the instant a polling predicate sees it
+  true, then asserting on that captured bool instead of re-checking the
+  transient state afterward.
 
 ## Verification performed (no live PIE access - see AGENTS.md on that gap)
 

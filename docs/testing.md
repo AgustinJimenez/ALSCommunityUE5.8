@@ -183,6 +183,8 @@ before injecting input equips the rifle (runs `ALS_CharacterBP`'s real
 `OnUpdateHeldObject` Blueprint event) so `Fire()` has a weapon mesh and
 ammo to work with, exactly like real gameplay.
 
+**`FInputTestActions`' single `PerformAction(Action)` call (no predicate) behaves like a tap, not a sustained hold.** No explicit release is ever injected in any test in this project, yet the bound `Completed`/`Canceled` handler still runs a tick or two later regardless - confirmed while testing that firing enters `EALSRotationMode::Aiming` for the duration fire is held (`ALSWeaponFireInputTests.cpp`'s `PressingFireAction_WhileNotSprinting_EntersAimingRotationMode`): checking the resulting state in any `.Then()`/`.Until()` step after the press reliably saw it already reverted, because it's only actually true for a single tick. Also note the injection itself lands asynchronously on a later tick, not synchronously within the `PerformAction()` call. The fix for both: don't re-check transient state after the fact - latch the observation into a member bool (not a local, for the usual dangling-across-async-`.Then()` reason - see the pickup-actor gotcha above) the instant a polling `.Until()` predicate sees it true, and assert on that captured bool instead.
+
 Not yet covered: enemy chase/pathfinding (`AAIController::MoveToActor`
 needs a built `NavMesh`, which a bare `FMapTestSpawner` temp level doesn't
 have - only the distance-gated attack logic that doesn't call `MoveToActor`
