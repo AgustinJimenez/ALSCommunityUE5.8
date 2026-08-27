@@ -397,8 +397,7 @@ void UALSWeaponFireComponent::StartFiring()
 		return;
 	}
 
-	AALSCharacter* ALSChar = Cast<AALSCharacter>(GetOwner());
-	if (ALSChar)
+	if (AALSCharacter* ALSChar = Cast<AALSCharacter>(GetOwner()))
 	{
 		// Enters the same Aiming rotation mode ALS's own manual Aim input
 		// (held Right Mouse Button, AALSBaseCharacter::AimAction) uses -
@@ -408,17 +407,15 @@ void UALSWeaponFireComponent::StartFiring()
 		// RotationMode == Aiming, see ALSBaseCharacter.cpp) blocks sprinting
 		// for the whole duration fire is held, without reimplementing that
 		// rule here - reusing ALS's own logic rather than duplicating it.
+		//
+		// Pressing fire while sprinting is meant to transition straight into
+		// walk+aim+shoot in one motion - AimAction(true) below already
+		// forces the character out of sprint, so Fire() further down is
+		// allowed to proceed unconditionally in the same press rather than
+		// refusing the first shot and waiting for GetGait() to catch up on
+		// a later tick (which just produced "cancels sprint but doesn't
+		// actually fire until you press again", not the intended behavior).
 		ALSChar->AimAction(true);
-
-		// Belt-and-suspenders: Gait only actually re-settles on a later
-		// tick after the AimAction() call above changes RotationMode, so
-		// explicitly refuse to start firing at all if the character is
-		// still mid-sprint on the very frame the trigger is pressed,
-		// rather than relying on next-tick timing to catch it.
-		if (ALSChar->GetGait() == EALSGait::Sprinting)
-		{
-			return;
-		}
 	}
 
 	// Fire immediately on press, then repeat at the RPM-derived interval

@@ -96,8 +96,13 @@ TEST_CLASS(ALSWeaponFireInputTests, "ALSHost.Weapon")
 			});
 	}
 
-	TEST_METHOD(PressingFireAction_WhileSprinting_DoesNotFire)
+	TEST_METHOD(PressingFireAction_WhileSprinting_FiresImmediately_AndCancelsSprint)
 	{
+		// Pressing fire while sprinting should transition straight into
+		// walk+aim+shoot in that same press - not cancel sprint on the first
+		// press and require a second press to actually fire (which is what
+		// an earlier version of this behavior did, and is exactly what this
+		// test would have caught: ammo staying at 0/unfired).
 		TestCommandBuilder
 			.StartWhen([this]() { return Spawner.IsValid(); })
 			.Then([this]() {
@@ -118,22 +123,13 @@ TEST_CLASS(ALSWeaponFireInputTests, "ALSHost.Weapon")
 				ShooterActions = MakeUnique<FALSShooterTestActions>(Shooter);
 			})
 			.WaitDelay(FTimespan::FromSeconds(0.2))
+			.Then([this]() { ShooterActions->PressFire(); })
+			.Until([this]() { return Weapon->GetCurrentAmmoInMagazine() != 0; }, FTimespan::FromSeconds(2.0))
 			.Then([this]() {
-				// Ammo is lazily synced to the magazine size only inside a
-				// successful Fire() call - a correctly-blocked attempt never
-				// reaches that, so the meaningful check is "unchanged from
-				// before the press" (0, its never-synced default), not a
-				// hardcoded 30.
-				const int32 AmmoBeforePress = Weapon->GetCurrentAmmoInMagazine();
-				ShooterActions->PressFire();
-				ASSERT_THAT(IsTrue(Weapon->GetCurrentAmmoInMagazine() == AmmoBeforePress));
-			})
-			.WaitDelay(FTimespan::FromSeconds(0.3))
-			.Then([this]() {
-				// Still true a moment later - confirms the block isn't just
-				// a one-frame race, e.g. from full-auto's repeating timer
-				// never getting armed at all.
-				ASSERT_THAT(IsTrue(Weapon->GetCurrentAmmoInMagazine() == 0));
+				// Ammo is lazily synced to the magazine size inside Fire()
+				// itself, so "not 0 anymore" already proves a shot actually
+				// went off (29, one shot into a fresh 30-round magazine).
+				ASSERT_THAT(IsTrue(Weapon->GetCurrentAmmoInMagazine() == 29));
 			});
 	}
 

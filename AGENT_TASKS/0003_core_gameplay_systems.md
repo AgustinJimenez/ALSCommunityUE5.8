@@ -201,6 +201,21 @@ unsaved-content-change-lost-on-force-kill gotcha - see AGENTS.md).
   observation into a member bool the instant a polling predicate sees it
   true, then asserting on that captured bool instead of re-checking the
   transient state afterward.
+- **Follow-up correction**: the first version of the sprint block above was
+  wrong in a way only caught by actually playing it (user-reported, not
+  found by the tests, which only checked "ammo unchanged" - a passing
+  assertion whether the shot was refused for one frame or refused
+  forever). It called `AimAction(true)` (canceling sprint) and then refused
+  to call `Fire()` at all if `GetGait()` still read `Sprinting` at that
+  exact instant - which it always does, since `Gait` only re-settles a tick
+  after `RotationMode` changes. The result: pressing fire while sprinting
+  visually canceled sprint into walk+aim, but never actually fired - the
+  player had to release and press fire a second time to get a shot off.
+  Fixed by dropping that `GetGait()` refusal entirely: `AimAction(true)`
+  alone already guarantees sprint can't continue, so `Fire()` is now always
+  allowed to proceed in the same press, giving the intended
+  walk+aim+shoot-in-one-motion feel. Test renamed/rewritten to assert a
+  shot actually lands (`PressingFireAction_WhileSprinting_FiresImmediately_AndCancelsSprint`).
 
 ## Verification performed (no live PIE access - see AGENTS.md on that gap)
 
