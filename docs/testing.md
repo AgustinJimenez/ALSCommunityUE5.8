@@ -144,6 +144,22 @@ actually building it:
 - `FActorTestSpawner` (no PIE) is still exactly the right tool for pure
   construction/property-level checks that don't depend on BeginPlay/Tick -
   cheaper and faster than spinning up a whole temp world.
+- Spawning an actor directly on top of another overlapping one (e.g. testing
+  a pickup by spawning it at the same location as a character) is not just a
+  test convenience issue - `OnComponentBeginOverlap` fires *synchronously,
+  from inside the `SpawnActor` call itself* when the new actor spawns
+  already overlapping something. This surfaced a real production bug (see
+  `AGENT_TASKS/0003_core_gameplay_systems.md`'s pickup-actor section):
+  calling `Destroy()` from that overlap handler makes `SpawnActor` return
+  `nullptr` to its own caller. It also means any properties you mean to set
+  on a freshly-spawned overlapping actor via the reference `SpawnActor`/
+  `SpawnActorAt` returns must be set *before* whatever would trigger the
+  overlap has a chance to read them - if the overlap already fired inline,
+  setting `Pickup.SomeProperty = X` after the call is too late, the overlap
+  handler already ran against the class defaults. Spawn away from the
+  target and `SetActorLocation(..., bSweep=true)` into it once configured,
+  both to sidestep the timing issue and because it's a more accurate
+  simulation of "walking up to a dropped item" anyway.
 
 Not yet covered: the original `Fire()`/`FInputTestActions` plan (real
 Enhanced-Input-driven weapon firing through the actual input action, not a

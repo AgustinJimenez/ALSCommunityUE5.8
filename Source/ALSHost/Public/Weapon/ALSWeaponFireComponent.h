@@ -169,8 +169,6 @@ protected:
 	void HandleDebugReloadTuningHoldThresholdReached();
 	void HandleCameraZoomInput(const FInputActionValue& Value);
 
-	float ComputeDamageForHit(const struct FHitResult& Hit, float DistanceFromMuzzle) const;
-
 	// ALS's own Q-held debug overlay menu has a scroll-to-cycle interaction
 	// that doesn't visually respond (traced deep into ALS's own Blueprints
 	// with no fix found within scope - see
@@ -292,6 +290,7 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "ALS|Weapon|Ammo")
 	FName ReloadMontageSlotName = TEXT("Grounded Slot");
 
+public:
 	// Max hitscan trace distance, in cm.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "ALS|Weapon")
 	float MaxRange = 10000.0f;
@@ -323,6 +322,14 @@ protected:
 	// ALS_Mannequin_Skeleton (and stock Epic Manny/Quinn) name this "head".
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "ALS|Weapon|Damage")
 	FName HeadBoneName = TEXT("head");
+
+	// Public (rather than an internal Fire() helper) so it's directly unit
+	// testable and reusable for UI damage previews later. BoneName drives
+	// the headshot check, DistanceFromMuzzle drives falloff.
+	UFUNCTION(BlueprintPure, Category = "ALS|Weapon|Damage")
+	float ComputeDamageForHit(FName BoneName, float DistanceFromMuzzle) const;
+protected:
+
 
 	// Spread half-angle in degrees per gait, applied around the aim
 	// direction. Tuned as a starting point, not measured against a real

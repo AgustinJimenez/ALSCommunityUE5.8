@@ -1010,7 +1010,7 @@ void UALSWeaponFireComponent::Fire()
 		if (AActor* HitActor = Hit.GetActor())
 		{
 			const float DistanceFromMuzzle = FVector::Dist(MuzzleLocation, Hit.ImpactPoint);
-			const float FinalDamage = ComputeDamageForHit(Hit, DistanceFromMuzzle);
+			const float FinalDamage = ComputeDamageForHit(Hit.BoneName, DistanceFromMuzzle);
 			UGameplayStatics::ApplyPointDamage(HitActor, FinalDamage, FireDirection, Hit, PC, ALSChar, DamageTypeClass);
 		}
 	}
@@ -1031,13 +1031,13 @@ void UALSWeaponFireComponent::Fire()
 	}
 }
 
-float UALSWeaponFireComponent::ComputeDamageForHit(const FHitResult& Hit, float DistanceFromMuzzle) const
+float UALSWeaponFireComponent::ComputeDamageForHit(FName BoneName, float DistanceFromMuzzle) const
 {
 	const float FalloffRange = FMath::Max(MaxRange - DamageFalloffStartRange, 1.0f);
 	const float FalloffAlpha = FMath::Clamp((DistanceFromMuzzle - DamageFalloffStartRange) / FalloffRange, 0.0f, 1.0f);
 	const float DistanceMultiplier = FMath::Lerp(1.0f, MinDamageMultiplier, FalloffAlpha);
 
-	const bool bIsHeadshot = !HeadBoneName.IsNone() && Hit.BoneName == HeadBoneName;
+	const bool bIsHeadshot = !HeadBoneName.IsNone() && BoneName == HeadBoneName;
 	const float HitZoneMultiplier = bIsHeadshot ? HeadshotMultiplier : 1.0f;
 
 	return DamagePerShot * DistanceMultiplier * HitZoneMultiplier;

@@ -39,6 +39,42 @@ unsaved-content-change-lost-on-force-kill gotcha - see AGENTS.md).
   `RemoveItem`), and a UI list widget (skipped this pass - no in-game way to
   view it yet beyond `GetItems()`/Blueprint).
 - Added to `ALS_CharacterBP` only.
+- **Update**: now has real content - see "Pickup actors" below.
+
+**AALSPickupBase / AALSItemPickup / AALSHealthPickup** (`Source/ALSHost/Public+Private/Inventory/`)
+- Added in a later pass (after CQTest existed) specifically to give
+  `UALSInventoryComponent` something to interact with. `AALSPickupBase` is
+  overlap-triggered (a `USphereComponent` on the `"OverlapAllDynamic"`
+  collision profile), subclasses only implement `OnPickedUp(APawn*) -> bool`;
+  `AALSItemPickup` calls `AddItem` on the pawn's inventory, `AALSHealthPickup`
+  calls `Heal` on its `UALSHealthComponent` (refuses if already full or dead,
+  leaving the pickup in the world rather than consuming it for nothing).
+  Two test instances (`ALSHealthPickup_0`, `ALSItemPickup_0`) placed next to
+  the player start in `ALS_DemoLevel`.
+- **Found and fixed a real bug this uncovered, not just a test artifact**:
+  a pickup that spawns already overlapping a pawn (dropped on top of one, or
+  spawned there deliberately) fires `OnComponentBeginOverlap` *synchronously
+  from inside `SpawnActor` itself*, still on the stack below it. The first
+  version called `Destroy()` directly from that overlap handler, which made
+  `SpawnActor` return `nullptr` to its own caller instead of the actor it had
+  just created - anything holding onto that return value (our own
+  `spawn_actor`/`SpawnActorAt` callers included) would silently get a null
+  pointer. Fixed by disabling the trigger collision and hiding the actor
+  immediately, then `SetLifeSpan(0.01f)` to defer the actual `Destroy()` off
+  the stack instead of calling it inline. Caught by CQTest hard-crashing
+  with `Assertion failed: Actor != nullptr` the first time a test spawned a
+  pickup directly on a character - see `docs/testing.md` for how that was
+  root-caused (several dead-end hypotheses - spawn collision handling,
+  double-firing overlaps - before finding the real cause) and
+  `ALSPickupTests.cpp` for the now-passing tests, which also had to stop
+  configuring pickup properties (`ItemID`, `HealAmount`, ...) on the
+  reference `SpawnActorAt` returns *after* spawning it overlapping a
+  character - same root cause, those property-set lines were running after
+  the synchronous overlap had already fired and consumed the pickup using
+  default values. Fixed by spawning away from the character, configuring,
+  then `SetActorLocation(..., bSweep=true)` to move it into the character
+  and trigger the overlap for real, once configured - which is also just a
+  more realistic simulation of "walking into a dropped pickup" anyway.
 
 **UALSHUDComponent + UALSStatusBarsWidget** (`Source/ALSHost/Public+Private/UI/`)
 - `UALSHUDComponent` owns creating/showing a HUD widget, only for a locally-
