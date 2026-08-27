@@ -2,6 +2,7 @@
 
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
+#include "Character/ALSPlayerController.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "InputAction.h"
@@ -109,13 +110,46 @@ void UALSInventoryComponent::HandleToggleInventoryUI(const FInputActionValue& Va
 		return;
 	}
 
+	// AALSPlayerController specifically (not just APlayerController) is what
+	// owns DefaultInputMappingContext - a test's temp-level PlayerController
+	// may not be that subclass, in which case the widget still opens/closes
+	// normally, just without the cursor/camera-lock behavior below (nothing
+	// to suspend without it).
+	AALSPlayerController* ALSPC = Cast<AALSPlayerController>(PC);
+	UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(PC->GetLocalPlayer());
+
 	if (InventoryWidgetInstance->IsInViewport())
 	{
 		InventoryWidgetInstance->RemoveFromParent();
+
+		// Same restore as UALSWeaponFireComponent::HandleDebugOverlayMenuClosed
+		// (the Q menu) - re-enable camera look/movement and go back to
+		// game-only input now that the panel is closed.
+		PC->SetShowMouseCursor(false);
+		PC->SetInputMode(FInputModeGameOnly());
+
+		if (Subsystem && ALSPC && ALSPC->DefaultInputMappingContext)
+		{
+			FModifyContextOptions Options;
+			Options.bForceImmediately = true;
+			Subsystem->AddMappingContext(ALSPC->DefaultInputMappingContext, 1, Options);
+		}
 	}
 	else
 	{
 		InventoryWidgetInstance->AddToViewport();
+
+		// Same treatment as UALSWeaponFireComponent::HandleDebugOverlayMenuOpened
+		// (the Q debug menu) - show the cursor and suspend ALS's own
+		// camera-look/movement input context so the mouse drives the UI
+		// instead of spinning the camera while the panel is open.
+		PC->SetShowMouseCursor(true);
+		PC->SetInputMode(FInputModeGameAndUI());
+
+		if (Subsystem && ALSPC && ALSPC->DefaultInputMappingContext)
+		{
+			Subsystem->RemoveMappingContext(ALSPC->DefaultInputMappingContext);
+		}
 	}
 }
 
