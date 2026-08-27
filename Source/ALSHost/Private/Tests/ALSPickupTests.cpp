@@ -12,6 +12,9 @@
 #include "Library/ALSCharacterEnumLibrary.h"
 #include "Kismet/GameplayStatics.h"
 #include "GameFramework/DamageType.h"
+#include "GameFramework/PlayerController.h"
+#include "UI/ALSInventoryWidget.h"
+#include "Blueprint/UserWidget.h"
 
 // Overlap-triggered pickups need real physics/collision, which (like
 // BeginPlay-dependent component logic - see docs/testing.md) needs
@@ -146,6 +149,78 @@ TEST_CLASS(ALSPickupTests, "ALSHost.Inventory")
 				ASSERT_THAT(IsNotNull(WeaponItem));
 				ASSERT_THAT(IsTrue(WeaponItem->bEquippable));
 				ASSERT_THAT(IsTrue(WeaponItem->EquipOverlayState == EALSOverlayState::Rifle));
+			});
+	}
+
+	// User report: pick up a Pistol then a Rifle (ends up equipped with the
+	// Rifle, since the most recently picked-up weapon wins), then click the
+	// Pistol's row in the inventory panel to switch back to it - doesn't
+	// work. First locks in that picking up a SECOND weapon doesn't clobber
+	// the first one's equippable inventory entry.
+	TEST_METHOD(PickingUpPistolThenRifle_KeepsBothEquippableInInventory)
+	{
+		TestCommandBuilder
+			.StartWhen([this]() { return Spawner.IsValid(); })
+			.Then([this]() {
+				SpawnCharacterAt(FVector::ZeroVector);
+				ASSERT_THAT(IsNotNull(Character));
+
+				AALSWeaponPickup& PistolPickup = Spawner->SpawnActorAt<AALSWeaponPickup>(FVector(FarAwayOffset, 0.f, 0.f), FRotator::ZeroRotator);
+				PistolPickup.OverlayStateToEquip = EALSOverlayState::PistolOneHanded;
+				PistolPickup.WeaponItemID = TEXT("Weapon_Pistol");
+				PistolPickup.BonusAmmoQuantity = 0;
+				PistolPickup.SetActorLocation(FVector::ZeroVector, /*bSweep=*/true);
+			})
+			.WaitDelay(FTimespan::FromSeconds(0.3))
+			.Then([this]() {
+				ASSERT_THAT(IsTrue(Character->GetOverlayState() == EALSOverlayState::PistolOneHanded));
+
+				AALSWeaponPickup& RiflePickup = Spawner->SpawnActorAt<AALSWeaponPickup>(FVector(FarAwayOffset, 0.f, 0.f), FRotator::ZeroRotator);
+				RiflePickup.OverlayStateToEquip = EALSOverlayState::Rifle;
+				RiflePickup.WeaponItemID = TEXT("Weapon_Rifle");
+				RiflePickup.BonusAmmoQuantity = 0;
+				RiflePickup.SetActorLocation(FVector::ZeroVector, /*bSweep=*/true);
+			})
+			.WaitDelay(FTimespan::FromSeconds(0.3))
+			.Then([this]() {
+				ASSERT_THAT(IsTrue(Character->GetOverlayState() == EALSOverlayState::Rifle));
+
+				UALSInventoryComponent* Inventory = Character->FindComponentByClass<UALSInventoryComponent>();
+				ASSERT_THAT(IsNotNull(Inventory));
+				ASSERT_THAT(IsTrue(Inventory->HasItem(TEXT("Weapon_Pistol"), 1)));
+				ASSERT_THAT(IsTrue(Inventory->HasItem(TEXT("Weapon_Rifle"), 1)));
+			});
+	}
+
+	// Second half of the same repro: with the Rifle currently equipped,
+	// clicking the Pistol's inventory row (UALSInventoryWidget::EquipItem,
+	// what HandleRowClicked actually calls) should switch back to it.
+	TEST_METHOD(EquipItem_WhileDifferentWeaponEquipped_SwitchesToClickedWeapon)
+	{
+		TestCommandBuilder
+			.StartWhen([this]() { return Spawner.IsValid(); })
+			.Then([this]() {
+				SpawnCharacterAt(FVector::ZeroVector);
+				ASSERT_THAT(IsNotNull(Character));
+
+				APlayerController* PC = UGameplayStatics::GetPlayerController(&Spawner->GetWorld(), 0);
+				ASSERT_THAT(IsNotNull(PC));
+				PC->Possess(Character);
+
+				UALSInventoryComponent* Inventory = Character->FindComponentByClass<UALSInventoryComponent>();
+				ASSERT_THAT(IsNotNull(Inventory));
+				Inventory->AddItem(TEXT("Weapon_Pistol"), FText::FromString(TEXT("Pistol")), 1, 1, /*bEquippable=*/true, EALSOverlayState::PistolOneHanded);
+				Inventory->AddItem(TEXT("Weapon_Rifle"), FText::FromString(TEXT("Rifle")), 1, 1, /*bEquippable=*/true, EALSOverlayState::Rifle);
+				Character->SetOverlayState(EALSOverlayState::Rifle);
+				ASSERT_THAT(IsTrue(Character->GetOverlayState() == EALSOverlayState::Rifle));
+
+				UClass* WidgetClass = LoadClass<UUserWidget>(nullptr, TEXT("/Game/ALSHost/UI/WBP_InventoryPanel.WBP_InventoryPanel_C"));
+				ASSERT_THAT(IsNotNull(WidgetClass));
+				UALSInventoryWidget* Widget = CreateWidget<UALSInventoryWidget>(PC, WidgetClass);
+				ASSERT_THAT(IsNotNull(Widget));
+
+				ASSERT_THAT(IsTrue(Widget->EquipItem(TEXT("Weapon_Pistol"))));
+				ASSERT_THAT(IsTrue(Character->GetOverlayState() == EALSOverlayState::PistolOneHanded));
 			});
 	}
 };

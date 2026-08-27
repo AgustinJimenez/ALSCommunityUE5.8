@@ -162,6 +162,70 @@ TEST_CLASS(ALSWeaponAmmoTests, "ALSHost.Weapon")
 				ASSERT_THAT(IsTrue(Inventory->HasItem(TEXT("Ammo_Bow"), 4)));
 			});
 	}
+
+	// User report: the Pistol fired full-auto (kept firing for as long as
+	// the trigger was held) - it shouldn't. StartFiring() now only starts
+	// the repeating fire timer when the current weapon's
+	// FALSWeaponAmmoStats::bFullyAutomatic is true (Pistol/Bow are false).
+	// Waits well past several RPM-derived intervals (default 600 RPM = 0.1s)
+	// to prove no repeating timer got scheduled, not just that the first
+	// shot landed.
+	TEST_METHOD(PistolStartFiring_FiresExactlyOnce_EvenWhenHeldPastMultipleIntervals)
+	{
+		TestCommandBuilder
+			.StartWhen([this]() { return Spawner.IsValid(); })
+			.Then([this]() {
+				UClass* CharClass = LoadClass<AALSCharacter>(nullptr, TEXT("/ALSV4_CPP/AdvancedLocomotionV4/Blueprints/CharacterLogic/ALS_CharacterBP.ALS_CharacterBP_C"));
+				ASSERT_THAT(IsNotNull(CharClass));
+
+				Character = &Spawner->SpawnActorAt<AALSCharacter>(FVector::ZeroVector, FRotator::ZeroRotator, FActorSpawnParameters(), CharClass);
+				Weapon = Character->FindComponentByClass<UALSWeaponFireComponent>();
+				ASSERT_THAT(IsNotNull(Weapon));
+				Character->SetOverlayState(EALSOverlayState::PistolOneHanded);
+
+				APlayerController* PC = UGameplayStatics::GetPlayerController(&Spawner->GetWorld(), 0);
+				ASSERT_THAT(IsNotNull(PC));
+				PC->Possess(Character);
+
+				Weapon->StartFiring();
+			})
+			.WaitDelay(FTimespan::FromSeconds(0.6))
+			.Then([this]() {
+				// Full magazine is 12 - exactly one shot fired means 11 left,
+				// not fewer (which "held past several 0.1s intervals" would
+				// produce if it were still full-auto).
+				ASSERT_THAT(IsTrue(Weapon->GetCurrentAmmoInMagazine() == 11));
+			});
+	}
+
+	// Contrast case: the Rifle is still full-auto - same held-StartFiring()
+	// shape, but should keep firing across those same intervals.
+	TEST_METHOD(RifleStartFiring_KeepsFiring_WhileHeldPastMultipleIntervals)
+	{
+		TestCommandBuilder
+			.StartWhen([this]() { return Spawner.IsValid(); })
+			.Then([this]() {
+				UClass* CharClass = LoadClass<AALSCharacter>(nullptr, TEXT("/ALSV4_CPP/AdvancedLocomotionV4/Blueprints/CharacterLogic/ALS_CharacterBP.ALS_CharacterBP_C"));
+				ASSERT_THAT(IsNotNull(CharClass));
+
+				Character = &Spawner->SpawnActorAt<AALSCharacter>(FVector::ZeroVector, FRotator::ZeroRotator, FActorSpawnParameters(), CharClass);
+				Weapon = Character->FindComponentByClass<UALSWeaponFireComponent>();
+				ASSERT_THAT(IsNotNull(Weapon));
+				Character->SetOverlayState(EALSOverlayState::Rifle);
+
+				APlayerController* PC = UGameplayStatics::GetPlayerController(&Spawner->GetWorld(), 0);
+				ASSERT_THAT(IsNotNull(PC));
+				PC->Possess(Character);
+
+				Weapon->StartFiring();
+			})
+			.WaitDelay(FTimespan::FromSeconds(0.6))
+			.Then([this]() {
+				// 600 RPM = one shot every 0.1s - well over 1 round should
+				// have fired in 0.6s if full-auto is still working.
+				ASSERT_THAT(IsTrue(Weapon->GetCurrentAmmoInMagazine() < 29));
+			});
+	}
 };
 
 #endif // WITH_AUTOMATION_TESTS

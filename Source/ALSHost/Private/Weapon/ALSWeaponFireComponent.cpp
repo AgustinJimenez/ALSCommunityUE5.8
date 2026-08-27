@@ -80,13 +80,17 @@ UALSWeaponFireComponent::UALSWeaponFireComponent()
 	PistolStats.MagazineSize = 12;
 	PistolStats.ReloadSeconds = 1.6f;
 	PistolStats.AmmoItemID = TEXT("Ammo_Pistol");
+	PistolStats.bFullyAutomatic = false;
 	AmmoStatsByOverlayState.Add(EALSOverlayState::PistolOneHanded, PistolStats);
 
-	// One "arrow" per shot - nocking the next one is the reload.
+	// One "arrow" per shot - nocking the next one is the reload. Also
+	// semi-auto for the same reason as the Pistol - nothing about a bow
+	// makes sense held-to-repeat.
 	FALSWeaponAmmoStats BowStats;
 	BowStats.MagazineSize = 1;
 	BowStats.ReloadSeconds = 1.2f;
 	BowStats.AmmoItemID = TEXT("Ammo_Bow");
+	BowStats.bFullyAutomatic = false;
 	AmmoStatsByOverlayState.Add(EALSOverlayState::Bow, BowStats);
 
 	ProjectileClass = AALSProjectile::StaticClass();
@@ -417,7 +421,8 @@ void UALSWeaponFireComponent::StartFiring()
 		return;
 	}
 
-	if (AALSCharacter* ALSChar = Cast<AALSCharacter>(GetOwner()))
+	AALSCharacter* ALSChar = Cast<AALSCharacter>(GetOwner());
+	if (ALSChar)
 	{
 		// Only enter the Aiming rotation mode (and therefore the camera zoom
 		// it drives - see ALS_PlayerCameraBehavior) if a weapon is actually
@@ -455,12 +460,20 @@ void UALSWeaponFireComponent::StartFiring()
 		return;
 	}
 
-	// Fire immediately on press, then repeat at the RPM-derived interval
-	// for as long as the trigger is held.
+	// Fire immediately on press. Full-auto weapons (or anything with no
+	// configured ammo stats, matching the previous always-full-auto
+	// behavior) then repeat at the RPM-derived interval for as long as the
+	// trigger is held; semi-auto weapons (e.g. the Pistol) fire exactly once
+	// per press and need a fresh press for each shot.
 	Fire();
 
-	const float IntervalSeconds = 60.0f / FMath::Max(RoundsPerMinute, 1.0f);
-	World->GetTimerManager().SetTimer(FireTimerHandle, this, &UALSWeaponFireComponent::Fire, IntervalSeconds, /*bLoop=*/true);
+	const FALSWeaponAmmoStats* Stats = ALSChar ? AmmoStatsByOverlayState.Find(ALSChar->GetOverlayState()) : nullptr;
+	const bool bFullyAutomatic = !Stats || Stats->bFullyAutomatic;
+	if (bFullyAutomatic)
+	{
+		const float IntervalSeconds = 60.0f / FMath::Max(RoundsPerMinute, 1.0f);
+		World->GetTimerManager().SetTimer(FireTimerHandle, this, &UALSWeaponFireComponent::Fire, IntervalSeconds, /*bLoop=*/true);
+	}
 }
 
 void UALSWeaponFireComponent::StopFiring()

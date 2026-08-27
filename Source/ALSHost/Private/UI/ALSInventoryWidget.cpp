@@ -85,12 +85,17 @@ void UALSInventoryWidget::RefreshItemsList()
 
 void UALSInventoryWidget::HandleRowClicked(FName ItemID)
 {
+	EquipItem(ItemID);
+}
+
+bool UALSInventoryWidget::EquipItem(FName ItemID)
+{
 	APawn* Pawn = GetOwningPlayerPawn();
 	AALSCharacter* ALSChar = Pawn ? Cast<AALSCharacter>(Pawn) : nullptr;
 	UALSInventoryComponent* Inventory = Pawn ? Pawn->FindComponentByClass<UALSInventoryComponent>() : nullptr;
 	if (!ALSChar || !Inventory)
 	{
-		return;
+		return false;
 	}
 
 	for (const FALSInventoryItem& Item : Inventory->GetItems())
@@ -98,7 +103,9 @@ void UALSInventoryWidget::HandleRowClicked(FName ItemID)
 		if (Item.ItemID == ItemID && Item.bEquippable)
 		{
 			ALSChar->SetOverlayState(Item.EquipOverlayState);
-			return;
+			return true;
 		}
 	}
+
+	return false;
 }

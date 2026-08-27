@@ -37,6 +37,15 @@ struct FALSWeaponAmmoStats
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	FName AmmoItemID = TEXT("Ammo_Rifle");
 
+	// True (default, matches every weapon's original behavior before this
+	// was added): holding Fire repeats at the RPM-derived interval for as
+	// long as the trigger is held. False: exactly one shot per press,
+	// regardless of how long Fire is held - a fresh press is needed for
+	// each shot (e.g. the Pistol, and the Bow - nocking one arrow at a time
+	// isn't something you hold a trigger down for).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	bool bFullyAutomatic = true;
+
 	// Played via PlaySlotAnimationAsDynamicMontage on the component's
 	// ReloadMontageSlotName - no hand-authored AnimMontage asset needed for
 	// a simple "play this once" reload. If unset, Reload() still runs the

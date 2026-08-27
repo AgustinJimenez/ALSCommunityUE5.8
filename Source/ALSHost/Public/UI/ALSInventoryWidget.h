@@ -26,6 +26,15 @@ public:
 	UPROPERTY(EditDefaultsOnly, Category = "ALS|Inventory")
 	TSubclassOf<UALSDebugMenuRowWidget> RowWidgetClass;
 
+	// Equips ItemID if it's a known, bEquippable item in the owning pawn's
+	// inventory - what clicking a row actually does (HandleRowClicked is a
+	// thin wrapper around this). Public and BlueprintCallable so it's
+	// directly testable without needing to simulate a real mouse click
+	// through Slate hit-testing. Returns false if ItemID isn't found or
+	// isn't equippable.
+	UFUNCTION(BlueprintCallable, Category = "ALS|Inventory")
+	bool EquipItem(FName ItemID);
+
 protected:
 	virtual void NativeConstruct() override;
 
