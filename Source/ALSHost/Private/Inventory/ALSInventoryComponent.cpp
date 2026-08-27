@@ -1,8 +1,122 @@
 #include "Inventory/ALSInventoryComponent.h"
 
+#include "GameFramework/Pawn.h"
+#include "GameFramework/PlayerController.h"
+#include "EnhancedInputComponent.h"
+#include "EnhancedInputSubsystems.h"
+#include "InputAction.h"
+#include "InputMappingContext.h"
+#include "Blueprint/UserWidget.h"
+
 UALSInventoryComponent::UALSInventoryComponent()
 {
 	PrimaryComponentTick.bCanEverTick = false;
+}
+
+void UALSInventoryComponent::BeginPlay()
+{
+	Super::BeginPlay();
+
+	if (APawn* OwnerPawn = Cast<APawn>(GetOwner()))
+	{
+		OwnerPawn->ReceiveControllerChangedDelegate.AddDynamic(this, &UALSInventoryComponent::HandleControllerChanged);
+	}
+
+	TrySetupInput();
+}
+
+void UALSInventoryComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (APawn* OwnerPawn = Cast<APawn>(GetOwner()))
+	{
+		OwnerPawn->ReceiveControllerChangedDelegate.RemoveDynamic(this, &UALSInventoryComponent::HandleControllerChanged);
+	}
+
+	Super::EndPlay(EndPlayReason);
+}
+
+void UALSInventoryComponent::HandleControllerChanged(APawn* PawnChanged, AController* OldController, AController* NewController)
+{
+	TrySetupInput();
+}
+
+void UALSInventoryComponent::TrySetupInput()
+{
+	// Same BeginPlay-before-possession gotcha UALSWeaponFireComponent's
+	// input binding already documents - retry on possession.
+	if (bInputBound || !ToggleInventoryUIInputAction)
+	{
+		return;
+	}
+
+	const APawn* OwnerPawn = Cast<APawn>(GetOwner());
+	if (!OwnerPawn)
+	{
+		return;
+	}
+
+	APlayerController* PC = Cast<APlayerController>(OwnerPawn->GetController());
+	if (!PC)
+	{
+		return;
+	}
+
+	UEnhancedInputComponent* EIC = Cast<UEnhancedInputComponent>(PC->InputComponent);
+	if (!EIC)
+	{
+		return;
+	}
+
+	EIC->BindAction(ToggleInventoryUIInputAction, ETriggerEvent::Started, this, &UALSInventoryComponent::HandleToggleInventoryUI);
+
+	if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(PC->GetLocalPlayer()))
+	{
+		if (ToggleInventoryUIInputMappingContext)
+		{
+			Subsystem->AddMappingContext(ToggleInventoryUIInputMappingContext, 0);
+		}
+	}
+
+	bInputBound = true;
+}
+
+bool UALSInventoryComponent::IsInventoryUIOpen() const
+{
+	return InventoryWidgetInstance && InventoryWidgetInstance->IsInViewport();
+}
+
+void UALSInventoryComponent::HandleToggleInventoryUI(const FInputActionValue& Value)
+{
+	if (!InventoryWidgetClass)
+	{
+		return;
+	}
+
+	APawn* OwnerPawn = Cast<APawn>(GetOwner());
+	APlayerController* PC = OwnerPawn ? Cast<APlayerController>(OwnerPawn->GetController()) : nullptr;
+	if (!PC)
+	{
+		return;
+	}
+
+	if (!InventoryWidgetInstance)
+	{
+		InventoryWidgetInstance = CreateWidget<UUserWidget>(PC, InventoryWidgetClass);
+	}
+
+	if (!InventoryWidgetInstance)
+	{
+		return;
+	}
+
+	if (InventoryWidgetInstance->IsInViewport())
+	{
+		InventoryWidgetInstance->RemoveFromParent();
+	}
+	else
+	{
+		InventoryWidgetInstance->AddToViewport();
+	}
 }
 
 int32 UALSInventoryComponent::AddItem(FName ItemID, FText DisplayName, int32 Quantity, int32 MaxStack)

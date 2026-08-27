@@ -4,6 +4,10 @@
 #include "Components/ActorComponent.h"
 #include "ALSInventoryComponent.generated.h"
 
+class UInputAction;
+class UInputMappingContext;
+struct FInputActionValue;
+
 USTRUCT(BlueprintType)
 struct FALSInventoryItem
 {
@@ -26,10 +30,11 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE(FALSOnInventoryChanged);
 
 // Minimal generic stack-based inventory: no item data assets yet (there's no
 // item content in the project to back them), just ID/DisplayName/Quantity
-// entries a pickup actor or gameplay event can Add/Remove by FName. Intended
-// as the foundation to build real item types (health packs, ammo, keys) on
-// top of once there's content to define them against - see AGENT_TASKS for
-// what's still open.
+// entries a pickup actor or gameplay event can Add/Remove by FName. Also
+// owns showing/hiding a simple list widget on its own input action, the
+// same "component binds its own input" pattern UALSWeaponFireComponent
+// already uses - so no separate UI-only component is needed just to toggle
+// visibility.
 UCLASS(ClassGroup = (ALS), meta = (BlueprintSpawnableComponent))
 class ALSHOST_API UALSInventoryComponent : public UActorComponent
 {
@@ -63,7 +68,37 @@ public:
 	UFUNCTION(BlueprintPure, Category = "ALS|Inventory")
 	const TArray<FALSInventoryItem>& GetItems() const { return Items; }
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "ALS|Inventory|UI")
+	TObjectPtr<UInputAction> ToggleInventoryUIInputAction;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "ALS|Inventory|UI")
+	TObjectPtr<UInputMappingContext> ToggleInventoryUIInputMappingContext;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "ALS|Inventory|UI")
+	TSubclassOf<class UUserWidget> InventoryWidgetClass;
+
+	// Exposed for testability (and any Blueprint/UI code that wants to
+	// check current state) rather than just an internal HandleToggleInventoryUI
+	// implementation detail.
+	UFUNCTION(BlueprintPure, Category = "ALS|Inventory|UI")
+	bool IsInventoryUIOpen() const;
+
+protected:
+	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+
+	UFUNCTION()
+	void HandleControllerChanged(APawn* PawnChanged, AController* OldController, AController* NewController);
+
+	void TrySetupInput();
+	void HandleToggleInventoryUI(const FInputActionValue& Value);
+
 private:
 	UPROPERTY(VisibleInstanceOnly, Category = "ALS|Inventory")
 	TArray<FALSInventoryItem> Items;
+
+	UPROPERTY()
+	TObjectPtr<class UUserWidget> InventoryWidgetInstance;
+
+	bool bInputBound = false;
 };
