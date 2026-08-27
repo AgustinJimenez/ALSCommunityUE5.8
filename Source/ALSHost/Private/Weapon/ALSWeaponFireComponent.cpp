@@ -490,7 +490,7 @@ void UALSWeaponFireComponent::TickComponent(float DeltaTime, ELevelTick TickType
 	RemainingRecoilPitch -= ThisFrameKick;
 }
 
-void UALSWeaponFireComponent::UpdateBloomForShot()
+void UALSWeaponFireComponent::UpdateBloomForShot(const AALSBaseCharacter* Character)
 {
 	const float Now = GetWorld()->GetTimeSeconds();
 	const float Elapsed = Now - LastFireWorldTime;
@@ -502,7 +502,11 @@ void UALSWeaponFireComponent::UpdateBloomForShot()
 	LastFireWorldTime = Now;
 
 	CurrentBloomDegrees = FMath::Min(CurrentBloomDegrees + BloomPerShotDegrees, MaxBloomDegrees);
-	RemainingRecoilPitch = FMath::Min(RemainingRecoilPitch + RecoilKickPerShotDegrees, MaxRecoilPitchDegrees);
+
+	// A stationary, braced shooter controls recoil better than one moving -
+	// same "IsMoving(), not just Gait" reasoning as ComputeCurrentSpreadDegrees.
+	const float RecoilMultiplier = (Character && !Character->IsMoving()) ? RecoilStandingMultiplier : 1.0f;
+	RemainingRecoilPitch = FMath::Min(RemainingRecoilPitch + RecoilKickPerShotDegrees * RecoilMultiplier, MaxRecoilPitchDegrees);
 }
 
 void UALSWeaponFireComponent::SyncAmmoForCurrentWeapon(const AALSBaseCharacter* Character)
@@ -903,18 +907,32 @@ float UALSWeaponFireComponent::ComputeCurrentSpreadDegrees(const AALSBaseCharact
 		return SpreadDegreesWalking;
 	}
 
-	float SpreadDegrees = SpreadDegreesWalking;
-	switch (Character->GetGait())
+	// IsMoving() (actual current velocity), not just Gait - a character can
+	// be in Walking gait while still accelerating from/decelerating to a
+	// stop, which isn't the same as being braced and stationary. Gait only
+	// distinguishes speed *while* moving, so it's checked second.
+	float SpreadDegrees;
+	if (!Character->IsMoving())
 	{
-	case EALSGait::Walking:
-		SpreadDegrees = SpreadDegreesWalking;
-		break;
-	case EALSGait::Running:
-		SpreadDegrees = SpreadDegreesRunning;
-		break;
-	case EALSGait::Sprinting:
-		SpreadDegrees = SpreadDegreesSprinting;
-		break;
+		SpreadDegrees = SpreadDegreesStanding;
+	}
+	else
+	{
+		switch (Character->GetGait())
+		{
+		case EALSGait::Walking:
+			SpreadDegrees = SpreadDegreesWalking;
+			break;
+		case EALSGait::Running:
+			SpreadDegrees = SpreadDegreesRunning;
+			break;
+		case EALSGait::Sprinting:
+			SpreadDegrees = SpreadDegreesSprinting;
+			break;
+		default:
+			SpreadDegrees = SpreadDegreesWalking;
+			break;
+		}
 	}
 
 	if (Character->GetRotationMode() == EALSRotationMode::Aiming)
@@ -981,7 +999,7 @@ void UALSWeaponFireComponent::Fire()
 	const FVector AimTarget = CameraLocation + CameraRotation.Vector() * MaxRange;
 	const FVector AimDirection = (AimTarget - MuzzleLocation).GetSafeNormal();
 
-	UpdateBloomForShot();
+	UpdateBloomForShot(ALSChar);
 	const float SpreadDegrees = ComputeCurrentSpreadDegrees(ALSChar) + CurrentBloomDegrees;
 	const FVector FireDirection = SpreadDegrees > 0.0f
 		? FMath::VRandCone(AimDirection, FMath::DegreesToRadians(SpreadDegrees))

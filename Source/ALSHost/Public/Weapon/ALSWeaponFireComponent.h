@@ -349,12 +349,19 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "ALS|Weapon|Projectile")
 	float ProjectileGravityScale = 0.3f;
 
-protected:
+public:
+	// Spread half-angle in degrees, applied around the aim direction. Tuned
+	// as a starting point, not measured against a real weapon.
+	//
+	// Standing (AALSBaseCharacter::IsMoving() false - actually stationary,
+	// not just "Gait is Walking") is a genuinely separate, tighter tier from
+	// Walking gait: a character can be in Walking gait while still ramping
+	// up to speed or slowing to a stop, so gait alone doesn't distinguish
+	// "braced and still" from "in motion at walk speed". Real-world accuracy
+	// is meaningfully better stationary than even walking.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "ALS|Weapon|Spread")
+	float SpreadDegreesStanding = 0.05f;
 
-
-	// Spread half-angle in degrees per gait, applied around the aim
-	// direction. Tuned as a starting point, not measured against a real
-	// weapon.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "ALS|Weapon|Spread")
 	float SpreadDegreesWalking = 0.2f;
 
@@ -367,6 +374,12 @@ protected:
 	// Multiplier applied to the above when RotationMode is Aiming.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "ALS|Weapon|Spread")
 	float AimingSpreadMultiplier = 0.25f;
+
+	// Public (rather than an internal Fire() helper) so it's directly unit
+	// testable - see ALSWeaponDamageTests.cpp-style coverage in
+	// ALSWeaponSpreadTests.cpp.
+	UFUNCTION(BlueprintPure, Category = "ALS|Weapon|Spread")
+	float ComputeCurrentSpreadDegrees(const class AALSBaseCharacter* Character) const;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "ALS|Weapon")
 	TEnumAsByte<ECollisionChannel> TraceChannel = ECC_Visibility;
@@ -419,9 +432,14 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "ALS|Weapon|Recoil")
 	float RecoilRecoverySpeed = 8.0f;
 
+	// Multiplies RecoilKickPerShotDegrees when the character is actually
+	// stationary (AALSBaseCharacter::IsMoving() false) - a braced, still
+	// shooter controls recoil better than one in motion. 1.0 = no change.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "ALS|Weapon|Recoil")
+	float RecoilStandingMultiplier = 0.6f;
+
 private:
-	float ComputeCurrentSpreadDegrees(const class AALSBaseCharacter* Character) const;
-	void UpdateBloomForShot();
+	void UpdateBloomForShot(const class AALSBaseCharacter* Character);
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 
 	// If the character's overlay state has changed since the last check (or
