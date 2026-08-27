@@ -70,6 +70,25 @@ UALSWeaponFireComponent::UALSWeaponFireComponent()
 
 	AmmoStatsByOverlayState.Add(EALSOverlayState::Rifle, RifleStats);
 
+	// M9 (PistolOneHanded's mesh) and Bow both now have a real "Muzzle"
+	// socket (added via add_socket, estimated from their ADS socket/mesh
+	// bounds - not visually verified yet, same caveat the Rifle's Muzzle
+	// socket started with). No ReloadAnimation for either yet - Reload()
+	// still runs the timer/ammo logic correctly with nothing to play, same
+	// as any weapon without one.
+	FALSWeaponAmmoStats PistolStats;
+	PistolStats.MagazineSize = 12;
+	PistolStats.ReloadSeconds = 1.6f;
+	PistolStats.AmmoItemID = TEXT("Ammo_Pistol");
+	AmmoStatsByOverlayState.Add(EALSOverlayState::PistolOneHanded, PistolStats);
+
+	// One "arrow" per shot - nocking the next one is the reload.
+	FALSWeaponAmmoStats BowStats;
+	BowStats.MagazineSize = 1;
+	BowStats.ReloadSeconds = 1.2f;
+	BowStats.AmmoItemID = TEXT("Ammo_Bow");
+	AmmoStatsByOverlayState.Add(EALSOverlayState::Bow, BowStats);
+
 	ProjectileClass = AALSProjectile::StaticClass();
 }
 

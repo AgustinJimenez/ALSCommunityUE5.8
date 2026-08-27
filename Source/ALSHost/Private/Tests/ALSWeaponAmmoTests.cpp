@@ -96,6 +96,72 @@ TEST_CLASS(ALSWeaponAmmoTests, "ALSHost.Weapon")
 				ASSERT_THAT(IsFalse(Inventory->HasItem(TEXT("Ammo_Rifle"), 1)));
 			});
 	}
+
+	// Pistol (M9) and Bow both gained a real "Muzzle" socket and
+	// AmmoStatsByOverlayState entry alongside the Rifle - these lock in that
+	// firing/reloading actually works for them too, not just visually
+	// equipping. Same direct-Fire()-call pattern as SpawnRiflemanWithEmptyMagazine,
+	// parameterized by overlay state instead of duplicating the whole fixture.
+	void SpawnCharacterEquippedAndDrained(EALSOverlayState OverlayState, int32 MagazineSize)
+	{
+		UClass* CharClass = LoadClass<AALSCharacter>(nullptr, TEXT("/ALSV4_CPP/AdvancedLocomotionV4/Blueprints/CharacterLogic/ALS_CharacterBP.ALS_CharacterBP_C"));
+		ASSERT_THAT(IsNotNull(CharClass));
+
+		Character = &Spawner->SpawnActorAt<AALSCharacter>(FVector::ZeroVector, FRotator::ZeroRotator, FActorSpawnParameters(), CharClass);
+		Weapon = Character->FindComponentByClass<UALSWeaponFireComponent>();
+		Inventory = Character->FindComponentByClass<UALSInventoryComponent>();
+		ASSERT_THAT(IsNotNull(Weapon));
+		ASSERT_THAT(IsNotNull(Inventory));
+
+		Character->SetOverlayState(OverlayState);
+
+		APlayerController* PC = UGameplayStatics::GetPlayerController(&Spawner->GetWorld(), 0);
+		ASSERT_THAT(IsNotNull(PC));
+		PC->Possess(Character);
+
+		for (int32 i = 0; i < MagazineSize; ++i)
+		{
+			Weapon->Fire();
+		}
+		ASSERT_THAT(IsTrue(Weapon->GetCurrentAmmoInMagazine() == 0));
+	}
+
+	TEST_METHOD(PistolFire_DrainsMagazine_AndReloadsFromReserve)
+	{
+		TestCommandBuilder
+			.StartWhen([this]() { return Spawner.IsValid(); })
+			.Then([this]() {
+				SpawnCharacterEquippedAndDrained(EALSOverlayState::PistolOneHanded, 12);
+				Inventory->AddItem(TEXT("Ammo_Pistol"), FText::FromString(TEXT("Pistol Ammo")), 12, 999);
+
+				Weapon->Reload();
+				ASSERT_THAT(IsTrue(Weapon->IsReloading()));
+			})
+			.WaitDelay(FTimespan::FromSeconds(2.0))
+			.Then([this]() {
+				ASSERT_THAT(IsFalse(Weapon->IsReloading()));
+				ASSERT_THAT(IsTrue(Weapon->GetCurrentAmmoInMagazine() == 12));
+			});
+	}
+
+	TEST_METHOD(BowFire_DrainsSingleArrow_AndReloadsFromReserve)
+	{
+		TestCommandBuilder
+			.StartWhen([this]() { return Spawner.IsValid(); })
+			.Then([this]() {
+				SpawnCharacterEquippedAndDrained(EALSOverlayState::Bow, 1);
+				Inventory->AddItem(TEXT("Ammo_Bow"), FText::FromString(TEXT("Arrows")), 5, 999);
+
+				Weapon->Reload();
+				ASSERT_THAT(IsTrue(Weapon->IsReloading()));
+			})
+			.WaitDelay(FTimespan::FromSeconds(1.5))
+			.Then([this]() {
+				ASSERT_THAT(IsFalse(Weapon->IsReloading()));
+				ASSERT_THAT(IsTrue(Weapon->GetCurrentAmmoInMagazine() == 1));
+				ASSERT_THAT(IsTrue(Inventory->HasItem(TEXT("Ammo_Bow"), 4)));
+			});
+	}
 };
 
 #endif // WITH_AUTOMATION_TESTS
