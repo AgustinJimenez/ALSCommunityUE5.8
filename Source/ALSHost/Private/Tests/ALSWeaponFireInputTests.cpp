@@ -219,6 +219,34 @@ TEST_CLASS(ALSWeaponFireInputTests, "ALSHost.Weapon")
 				ASSERT_THAT(IsTrue(Shooter->GetStance() == EALSStance::Crouching));
 			});
 	}
+
+	TEST_METHOD(PressingFireAction_WhileUnarmed_DoesNotEnterAimingMode)
+	{
+		// User report: "when unarmed, and i do left click, some zoom
+		// appears" - StartFiring() used to call AimAction(true)
+		// unconditionally, entering the Aiming rotation mode (which drives
+		// ALS_PlayerCameraBehavior's zoom) even with no weapon equipped.
+		// Calling StartFiring() directly (BlueprintCallable) rather than
+		// through real input injection - no tap-vs-hold timing to fight,
+		// since nothing here is meant to become true even transiently.
+		TestCommandBuilder
+			.StartWhen([this]() { return Spawner.IsValid(); })
+			.Then([this]() {
+				UClass* CharClass = LoadClass<AALSCharacter>(nullptr, TEXT("/ALSV4_CPP/AdvancedLocomotionV4/Blueprints/CharacterLogic/ALS_CharacterBP.ALS_CharacterBP_C"));
+				ASSERT_THAT(IsNotNull(CharClass));
+
+				Shooter = &Spawner->SpawnActorAt<AALSCharacter>(FVector::ZeroVector, FRotator::ZeroRotator, FActorSpawnParameters(), CharClass);
+				Weapon = Shooter->FindComponentByClass<UALSWeaponFireComponent>();
+				ASSERT_THAT(IsNotNull(Weapon));
+				ASSERT_THAT(IsTrue(Shooter->GetOverlayState() != EALSOverlayState::Rifle));
+				ASSERT_THAT(IsTrue(Shooter->GetRotationMode() != EALSRotationMode::Aiming));
+
+				Weapon->StartFiring();
+			})
+			.Then([this]() {
+				ASSERT_THAT(IsTrue(Shooter->GetRotationMode() != EALSRotationMode::Aiming));
+			});
+	}
 };
 
 #endif // WITH_AUTOMATION_TESTS

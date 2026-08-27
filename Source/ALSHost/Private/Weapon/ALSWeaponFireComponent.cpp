@@ -400,6 +400,19 @@ void UALSWeaponFireComponent::StartFiring()
 
 	if (AALSCharacter* ALSChar = Cast<AALSCharacter>(GetOwner()))
 	{
+		// Only enter the Aiming rotation mode (and therefore the camera zoom
+		// it drives - see ALS_PlayerCameraBehavior) if a weapon is actually
+		// held. Unarmed (no skeletal-mesh weapon attached, e.g.
+		// EALSOverlayState::Default), left-click has nothing to fire and
+		// should just do nothing - it shouldn't zoom the camera as if aiming
+		// down sights on a weapon that isn't there.
+		const USkeletalMeshComponent* WeaponMesh = ALSChar->SkeletalMesh;
+		const bool bHasWeaponEquipped = WeaponMesh && WeaponMesh->GetSkeletalMeshAsset();
+		if (!bHasWeaponEquipped)
+		{
+			return;
+		}
+
 		// Enters the same Aiming rotation mode ALS's own manual Aim input
 		// (held Right Mouse Button, AALSBaseCharacter::AimAction) uses -
 		// this is what actually drives the upper-body aim pose, previously
@@ -417,6 +430,10 @@ void UALSWeaponFireComponent::StartFiring()
 		// a later tick (which just produced "cancels sprint but doesn't
 		// actually fire until you press again", not the intended behavior).
 		ALSChar->AimAction(true);
+	}
+	else
+	{
+		return;
 	}
 
 	// Fire immediately on press, then repeat at the RPM-derived interval
