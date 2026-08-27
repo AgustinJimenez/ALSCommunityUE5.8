@@ -26,6 +26,8 @@
 #include "UI/ALSRifleReloadTuningWidget.h"
 #include "UI/ALSDebugPropMenuWidget.h"
 #include "Camera/ALSHostPlayerCameraManager.h"
+#include "Weapon/ALSProjectile.h"
+#include "GameFramework/ProjectileMovementComponent.h"
 #include "InputCoreTypes.h"
 
 // Defaults to true while this feature is under active development, since
@@ -66,6 +68,8 @@ UALSWeaponFireComponent::UALSWeaponFireComponent()
 	}
 
 	AmmoStatsByOverlayState.Add(EALSOverlayState::Rifle, RifleStats);
+
+	ProjectileClass = AALSProjectile::StaticClass();
 }
 
 void UALSWeaponFireComponent::BeginPlay()
@@ -985,38 +989,68 @@ void UALSWeaponFireComponent::Fire()
 
 	const FVector TraceEnd = MuzzleLocation + FireDirection * MaxRange;
 
-	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(ALSWeaponFire), /*bTraceComplex=*/true);
-	QueryParams.AddIgnoredActor(ALSChar);
-
-	FHitResult Hit;
-	const bool bHit = GetWorld()->LineTraceSingleByChannel(Hit, MuzzleLocation, TraceEnd, TraceChannel, QueryParams);
-
-	if (CVarALSWeaponShowDebugTrace.GetValueOnGameThread())
+	bool bSpawnedProjectile = false;
+	if (bUseProjectilePhysics && ProjectileClass)
 	{
-		const FVector DebugEnd = bHit ? Hit.ImpactPoint : TraceEnd;
-		DrawDebugLine(GetWorld(), MuzzleLocation, DebugEnd, bHit ? FColor::Red : FColor::Yellow, false, 1.0f, 0, 0.5f);
+		FActorSpawnParameters SpawnParams;
+		SpawnParams.Owner = ALSChar;
+		SpawnParams.Instigator = ALSChar;
+		SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+		if (AALSProjectile* Projectile = GetWorld()->SpawnActor<AALSProjectile>(ProjectileClass, MuzzleLocation, FireDirection.Rotation(), SpawnParams))
+		{
+			Projectile->InitializeProjectile(this, PC, ALSChar, DamageTypeClass, MuzzleLocation);
+
+			if (UProjectileMovementComponent* Movement = Projectile->FindComponentByClass<UProjectileMovementComponent>())
+			{
+				Movement->InitialSpeed = ProjectileSpeed;
+				Movement->MaxSpeed = ProjectileSpeed;
+				Movement->ProjectileGravityScale = ProjectileGravityScale;
+				Movement->Velocity = FireDirection * ProjectileSpeed;
+			}
+
+			bSpawnedProjectile = true;
+			UE_LOG(LogTemp, Log, TEXT("ALSWeaponFireComponent::Fire - spawned projectile from %s toward %s"), *MuzzleLocation.ToString(), *FireDirection.ToString());
+		}
+	}
+
+	if (!bSpawnedProjectile)
+	{
+		// Hitscan fallback - used when bUseProjectilePhysics is off, or
+		// ProjectileClass wasn't set for some reason.
+		FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(ALSWeaponFire), /*bTraceComplex=*/true);
+		QueryParams.AddIgnoredActor(ALSChar);
+
+		FHitResult Hit;
+		const bool bHit = GetWorld()->LineTraceSingleByChannel(Hit, MuzzleLocation, TraceEnd, TraceChannel, QueryParams);
+
+		if (CVarALSWeaponShowDebugTrace.GetValueOnGameThread())
+		{
+			const FVector DebugEnd = bHit ? Hit.ImpactPoint : TraceEnd;
+			DrawDebugLine(GetWorld(), MuzzleLocation, DebugEnd, bHit ? FColor::Red : FColor::Yellow, false, 1.0f, 0, 0.5f);
+			if (bHit)
+			{
+				DrawDebugPoint(GetWorld(), Hit.ImpactPoint, 8.0f, FColor::Red, false, 1.0f);
+			}
+		}
+
 		if (bHit)
 		{
-			DrawDebugPoint(GetWorld(), Hit.ImpactPoint, 8.0f, FColor::Red, false, 1.0f);
+			UE_LOG(LogTemp, Log, TEXT("ALSWeaponFireComponent::Fire - hit %s at %s"),
+				Hit.GetActor() ? *Hit.GetActor()->GetName() : TEXT("<no actor>"),
+				*Hit.ImpactPoint.ToString());
+
+			if (AActor* HitActor = Hit.GetActor())
+			{
+				const float DistanceFromMuzzle = FVector::Dist(MuzzleLocation, Hit.ImpactPoint);
+				const float FinalDamage = ComputeDamageForHit(Hit.BoneName, DistanceFromMuzzle);
+				UGameplayStatics::ApplyPointDamage(HitActor, FinalDamage, FireDirection, Hit, PC, ALSChar, DamageTypeClass);
+			}
 		}
-	}
-
-	if (bHit)
-	{
-		UE_LOG(LogTemp, Log, TEXT("ALSWeaponFireComponent::Fire - hit %s at %s"),
-			Hit.GetActor() ? *Hit.GetActor()->GetName() : TEXT("<no actor>"),
-			*Hit.ImpactPoint.ToString());
-
-		if (AActor* HitActor = Hit.GetActor())
+		else
 		{
-			const float DistanceFromMuzzle = FVector::Dist(MuzzleLocation, Hit.ImpactPoint);
-			const float FinalDamage = ComputeDamageForHit(Hit.BoneName, DistanceFromMuzzle);
-			UGameplayStatics::ApplyPointDamage(HitActor, FinalDamage, FireDirection, Hit, PC, ALSChar, DamageTypeClass);
+			UE_LOG(LogTemp, Log, TEXT("ALSWeaponFireComponent::Fire - no hit"));
 		}
-	}
-	else
-	{
-		UE_LOG(LogTemp, Log, TEXT("ALSWeaponFireComponent::Fire - no hit"));
 	}
 
 	if (CurrentAmmoInMagazine > 0)

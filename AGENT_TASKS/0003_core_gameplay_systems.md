@@ -135,14 +135,40 @@ unsaved-content-change-lost-on-force-kill gotcha - see AGENTS.md).
   and a headshot multiplier (`HeadshotMultiplier`, matched against
   `FHitResult::BoneName == HeadBoneName`, default `"head"` per
   ALS_Mannequin_Skeleton/stock Epic Manny naming).
-- Not done: still a hitscan trace, not a real spawned projectile actor with
-  travel time/drop/penetration - that's a materially bigger change
-  (spawning an `AActor` with `UProjectileMovementComponent` per shot, network
-  considerations, tracer VFX) and was judged lower value than the systems
-  above for this pass given no projectile-specific visual assets exist in
-  the project yet to make travel time visually read anyway. Revisit if the
-  user specifically wants bullet drop/travel time to be a gameplay factor
-  (e.g. for a sniper weapon).
+- **Update: real projectile physics added** (`AALSProjectile`,
+  `Source/ALSHost/Public+Private/Weapon/ALSProjectile`). `Fire()` now spawns
+  an actual `AActor` with a `UProjectileMovementComponent`
+  (`bUseProjectilePhysics`, on by default) instead of resolving the shot
+  with an instant hitscan trace - real flight time and gravity drop
+  (`ProjectileSpeed`, `ProjectileGravityScale`), so a shot at range visibly
+  takes time to arrive and arcs instead of hitting instantly. The old
+  hitscan trace is still there as a fallback (used if `bUseProjectilePhysics`
+  is off or `ProjectileClass` unset) - both paths call the exact same
+  `ComputeDamageForHit`, so damage numbers at a given distance/hit zone are
+  identical either way, only timing/trajectory differs. Uses a plain
+  `/Engine/BasicShapes/Sphere` mesh at tiny scale for now, no tracer VFX or
+  custom bullet mesh - visually minimal but functionally real.
+- **Two real bugs found and fixed via the new CQTest projectile tests, not
+  hypothetical**: first, `SetCollisionProfileName(TEXT("Projectile"))`
+  silently failed - **there is no stock "Projectile" collision profile in
+  vanilla UE5** (checked `BaseEngine.ini` directly, it isn't there), so the
+  projectile's collision was never actually configured and it flew straight
+  through targets with zero hits, confirmed by logging its own location
+  over time and watching it sail past a target at 4200cm when the target
+  was at 500cm. Fixed by setting `CollisionEnabled`/`ObjectType`/channel
+  responses explicitly rather than trusting a profile name. Second, the
+  same "properties set after `SpawnActor` returns are too late if the actor
+  overlaps something at spawn" trap documented in the pickup-actor section
+  above applies here too, for the same reason (`OnComponentHit` can fire
+  synchronously inside `SpawnActor`) - the tests spawn the projectile then
+  immediately set velocity via `FindComponentByClass<UProjectileMovementComponent>()`,
+  which works here specifically because a projectile spawned at the muzzle
+  isn't yet overlapping/touching the target, unlike the pickup case - worth
+  remembering as a recurring class of gotcha with this test framework, not
+  a one-off.
+- Not done: no tracer VFX, no custom bullet mesh, no penetration through
+  thin obstacles, no distinct visual/behavior per weapon type (all weapons
+  share one `AALSProjectile` class and one speed/gravity setting right now).
 
 ## Verification performed (no live PIE access - see AGENTS.md on that gap)
 

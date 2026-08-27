@@ -328,6 +328,27 @@ public:
 	// the headshot check, DistanceFromMuzzle drives falloff.
 	UFUNCTION(BlueprintPure, Category = "ALS|Weapon|Damage")
 	float ComputeDamageForHit(FName BoneName, float DistanceFromMuzzle) const;
+
+	// When true, Fire() spawns a real AALSProjectile with actual flight time
+	// and gravity drop instead of resolving the shot with an instant hitscan
+	// trace - a shot at range visibly takes time to arrive and arcs instead
+	// of hitting the instant the trigger is pulled. Both modes deal identical
+	// damage at identical distances/hit zones via the same
+	// ComputeDamageForHit - only the timing/trajectory differs. Falls back to
+	// the hitscan trace if true but ProjectileClass is unset.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "ALS|Weapon|Projectile")
+	bool bUseProjectilePhysics = true;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "ALS|Weapon|Projectile")
+	TSubclassOf<class AALSProjectile> ProjectileClass;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "ALS|Weapon|Projectile")
+	float ProjectileSpeed = 8000.0f;
+
+	// 0 = travels in a dead-straight line (no drop), 1 = full engine gravity.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "ALS|Weapon|Projectile")
+	float ProjectileGravityScale = 0.3f;
+
 protected:
 
 

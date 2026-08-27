@@ -160,6 +160,15 @@ actually building it:
   target and `SetActorLocation(..., bSweep=true)` into it once configured,
   both to sidestep the timing issue and because it's a more accurate
   simulation of "walking up to a dropped item" anyway.
+- **There is no stock `"Projectile"` collision profile in vanilla UE5** -
+  checked `Engine/Config/BaseEngine.ini` directly, it simply isn't defined.
+  `SetCollisionProfileName(TEXT("Projectile"))` on a fresh component fails
+  silently (no compile/runtime error, collision just stays unconfigured) -
+  found this via a projectile test that flew straight through its target
+  with zero hits; logging the projectile's own location every tick showed
+  it sailing past a target sitting well within its path. Set
+  `CollisionEnabled`/`ObjectType`/per-channel responses explicitly instead
+  of trusting a profile name for anything project-specific like this.
 
 Not yet covered: the original `Fire()`/`FInputTestActions` plan (real
 Enhanced-Input-driven weapon firing through the actual input action, not a
