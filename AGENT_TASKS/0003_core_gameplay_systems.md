@@ -123,11 +123,30 @@ unsaved-content-change-lost-on-force-kill gotcha - see AGENTS.md).
   listener came back up, without needing the user to run `/mcp` - polled
   `Test-NetConnection` on port 9877 rather than blocking on a fixed sleep.
 
-## Not yet functionally confirmed (needs a live PIE pass from the user)
+## Update: automated gameplay tests built, most of the above now confirmed
 
-- Does the HUD actually appear and update as health/stamina change?
-- Does the placed `BP_EnemyBasic` actually chase and melee the player, and
-  does the player's health bar visibly drop?
-- Does sprinting actually drain stamina and get cut off at zero?
-- Does headshot/falloff damage feel right (numbers are a first guess, not
-  tuned against actual playtesting)?
+After this was first written, `docs/testing.md`'s CQTest plan got
+implemented (see that doc for the full writeup). Real, passing, headless
+automated tests now confirm - not just "compiles", actual runtime behavior:
+
+- `UALSHealthComponent`: starts at `MaxHealth`, damage reduces it correctly,
+  lethal damage marks it dead and clamps at 0, damage after death doesn't go
+  negative. (`ALSHealthComponentTests.cpp`, 5 tests)
+- `UALSStaminaComponent`: starts at `MaxStamina`, actually drains while
+  `EALSGait::Sprinting`. (`ALSStaminaComponentTests.cpp`, 2 tests)
+- `AALSEnemyAIController`: an enemy within `AttackRange` of the player
+  **does** damage them over time (the exact "does it chase and melee"
+  question below, for the attack half - see caveat), an enemy beyond
+  `SightRange` does not, and a dead enemy stops attacking.
+  (`ALSEnemyAIControllerTests.cpp`, 3 tests)
+
+Still not covered by automated tests (see `docs/testing.md`'s "not yet
+covered" section for why): the actual chase/movement (`MoveToActor`) since
+it needs a built NavMesh a synthetic test world doesn't have, whether the
+HUD widget visually renders correctly (no visual assertions, `-nullrhi` skips
+rendering), and whether headshot/falloff damage numbers feel right in
+practice (tuning is a playtest question, not a correctness one - the math
+itself isn't separately unit-tested yet either, worth adding). A live PIE
+pass from the user is still the way to check those, but the core gameplay
+logic - the part most likely to have an actual bug - now has real coverage
+that will keep working on every future change, not just this one.

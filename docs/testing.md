@@ -1,9 +1,14 @@
 # Automated Testing
 
 How UE5 actually does automated gameplay testing, why it sidesteps the MCP's
-PIE-world blind spot (see `mcp-notes.md`), and a concrete, scoped plan for
-adding it to this project. Not implemented yet — this is the investigation
-and plan, written down so it doesn't need re-doing.
+PIE-world blind spot (see `mcp-notes.md`), and how it's wired up in this
+project. **Implemented** as of the session that added health/stamina/enemy
+AI (see `AGENT_TASKS/0003_core_gameplay_systems.md`) - CQTest and
+CQTestEnhancedInput are enabled, `ALSHost.Build.cs` depends on them, and
+`Source/ALSHost/Private/Tests/` has real passing tests
+(`ALSHealthComponentTests.cpp`, `ALSStaminaComponentTests.cpp`,
+`ALSEnemyAIControllerTests.cpp`). The investigation/plan below is kept for
+context; see "What actually got built" further down for the current state.
 
 ## Why this exists
 
@@ -91,3 +96,74 @@ multi-day undertaking, but genuinely new territory (`FMapTestSpawner` and
 `FInputTestActions` are unfamiliar), so expect some trial and error getting
 the wiring right on the first attempt, the same as everything else
 documented in `AGENTS.md`.
+
+## What actually got built (steps 1-2 done differently, 3-6 not needed yet)
+
+Steps 1-2 above (enable `CQTest`/`CQTestEnhancedInput`, add to
+`ALSHost.Build.cs`) were done exactly as planned - both are real engine
+modules/plugins present even in a launcher/binary engine install (their
+`Source/.../Private` folders are stripped, like almost every other engine
+module, but the precompiled `Engine/Binaries/Win64/UnrealEditor-CQTest*.dll`
+files link fine, the same as `Core`/`UMG`/every other engine dependency this
+project already used without its source present).
+
+Rather than the `Fire()`-specific plan in steps 3-6, the first real tests
+covered `UALSHealthComponent`, `UALSStaminaComponent`, and
+`AALSEnemyAIController` instead (built in the same session, needed
+verification more urgently). Two things the plan didn't anticipate, found by
+actually building it:
+
+- **`FActorTestSpawner` does NOT work for anything BeginPlay-dependent.**
+  Its own header says "no PIE loaded" and this is real, not a formality -
+  confirmed directly that `World::HasBegunPlay()` and
+  `Actor::HasActorBegunPlay()` are both false for actors spawned through it,
+  so `UALSHealthComponent::BeginPlay()` (which sets `CurrentHealth =
+  MaxHealth` and binds `OnTakeAnyDamage`) never ran, and every health
+  assertion read 0. Use `FMapTestSpawner::CreateFromTempLevel(TestCommandBuilder)`
+  instead for anything that needs real actor lifecycle - it stands up an
+  actual (if minimal) PIE-equivalent world. It also requires an explicit
+  `Spawner->AddWaitUntilLoadedCommand(TestRunner)` call right after creation
+  (a hard assert fires otherwise: "Must call AddWaitUntilLoadedCommand in
+  BEFORE_TEST") and `TestRunner` inside a `TEST_CLASS` body refers to the
+  static `TTestRunner*` pointer, not the `FAutomationTestBase&` reference
+  member of the same name it shadows - pass it directly, not `&TestRunner`.
+- **`UGameplayStatics::GetPlayerPawn(this, 0)`** (what `AALSEnemyAIController`
+  uses to find its target) **resolves through the world's first local
+  player's `PlayerController`**, not just any `APlayerController` that
+  happens to exist. A temp PIE world from `FMapTestSpawner` already has one
+  local player (possessing whatever default pawn it auto-spawned) -
+  spawning a second, disconnected `APlayerController` and calling `Possess`
+  on it does nothing for `GetPlayerPawn`. Fetch the existing one instead
+  (`UGameplayStatics::GetPlayerController(&Spawner->GetWorld(), 0)`) and
+  `Possess()` your own test character with *that*.
+- Assertion member functions live on `this->Assert` (the `FNoDiscardAsserter`
+  the `ASSERT_THAT` macro expands against), not as free functions - despite
+  `CQTestCondition.h` defining a similarly-named free `IsNearlyEqual`, the
+  actual member to call for float comparisons is `IsNear(Expected, Actual,
+  Epsilon)`.
+- `FActorTestSpawner` (no PIE) is still exactly the right tool for pure
+  construction/property-level checks that don't depend on BeginPlay/Tick -
+  cheaper and faster than spinning up a whole temp world.
+
+Not yet covered: the original `Fire()`/`FInputTestActions` plan (real
+Enhanced-Input-driven weapon firing through the actual input action, not a
+direct C++ call) and enemy chase/pathfinding (`AAIController::MoveToActor`
+needs a built `NavMesh`, which a bare `FMapTestSpawner` temp level doesn't
+have - only the distance-gated attack logic that doesn't call `MoveToActor`
+is covered; see `ALSEnemyAIControllerTests.cpp`'s file comment). Both are
+reachable with the patterns established here if needed later.
+
+## Running the tests
+
+```
+"<EngineDir>/Engine/Binaries/Win64/UnrealEditor-Cmd.exe" "<ProjectDir>/ALSHost.uproject" \
+  -ExecCmds="Automation RunTests ALSHost;Quit" -unattended -nopause -nosplash -nullrhi -log
+```
+
+Then check `Saved/Logs/ALSHost.log` for `Test Completed. Result={Success|Fail}`
+lines (grep for `Test Completed|Error:` - the two harmless
+`LogAutomationTest: Error: Condition failed` lines that print at engine-init
+time, timestamp `[  0]`, are unrelated pre-existing engine self-checks, not
+this project's tests). `-nullrhi` skips GPU/rendering entirely, which is
+fine since nothing here asserts on visuals. Narrow to one group with e.g.
+`Automation RunTests ALSHost.Combat` instead of the bare `ALSHost` prefix.
