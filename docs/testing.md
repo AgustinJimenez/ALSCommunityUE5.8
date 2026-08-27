@@ -170,13 +170,26 @@ actually building it:
   `CollisionEnabled`/`ObjectType`/per-channel responses explicitly instead
   of trusting a profile name for anything project-specific like this.
 
-Not yet covered: the original `Fire()`/`FInputTestActions` plan (real
-Enhanced-Input-driven weapon firing through the actual input action, not a
-direct C++ call) and enemy chase/pathfinding (`AAIController::MoveToActor`
+**Update: the original `Fire()`/`FInputTestActions` plan is done too**
+(`ALSWeaponFireInputTests.cpp`) - fires the weapon through the actual
+`IA_Fire` Enhanced Input action via `FInputTestActions`' real input-injection
+API, not a direct C++ call to `Fire()`, and passed on the first attempt once
+the pattern from the other tests was in place: `FMapTestSpawner`'s temp
+world already has a real local player's `PlayerController` with a fully
+initialized Enhanced Input subsystem (`UGameplayStatics::GetPlayerController`
++ re-`Possess()`, same as `ALSEnemyAIControllerTests`), which is exactly
+what `FInputTestActions` needs to inject into. `Shooter->SetOverlayState(EALSOverlayState::Rifle)`
+before injecting input equips the rifle (runs `ALS_CharacterBP`'s real
+`OnUpdateHeldObject` Blueprint event) so `Fire()` has a weapon mesh and
+ammo to work with, exactly like real gameplay.
+
+Not yet covered: enemy chase/pathfinding (`AAIController::MoveToActor`
 needs a built `NavMesh`, which a bare `FMapTestSpawner` temp level doesn't
 have - only the distance-gated attack logic that doesn't call `MoveToActor`
-is covered; see `ALSEnemyAIControllerTests.cpp`'s file comment). Both are
-reachable with the patterns established here if needed later.
+is covered; see `ALSEnemyAIControllerTests.cpp`'s file comment). Reachable
+with the patterns established here if needed later (would need either a
+real test map with baked navigation, or building nav data programmatically
+in test setup).
 
 ## Running the tests
 
