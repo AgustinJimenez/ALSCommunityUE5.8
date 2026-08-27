@@ -14,7 +14,9 @@ public class ALSHost : ModuleRules
 			"UMG",            // For the reload-offset debug tuning widget
 			"ApplicationCore",// For FPlatformApplicationMisc::ClipboardCopy (debug tuning "copy values" button)
 			"Slate",          // For FReply (native mouse handling in UALSOverlayStateOptionWidget)
-			"SlateCore"
+			"SlateCore",
+			"AIModule",       // For AAIController/enemy chase-attack logic (AALSEnemyAIController)
+			"GameplayTasks"   // AIModule's AAIController depends on this
 		});
 	}
 }

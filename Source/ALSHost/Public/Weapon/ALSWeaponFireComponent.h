@@ -169,6 +169,8 @@ protected:
 	void HandleDebugReloadTuningHoldThresholdReached();
 	void HandleCameraZoomInput(const FInputActionValue& Value);
 
+	float ComputeDamageForHit(const struct FHitResult& Hit, float DistanceFromMuzzle) const;
+
 	// ALS's own Q-held debug overlay menu has a scroll-to-cycle interaction
 	// that doesn't visually respond (traced deep into ALS's own Blueprints
 	// with no fix found within scope - see
@@ -293,6 +295,34 @@ protected:
 	// Max hitscan trace distance, in cm.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "ALS|Weapon")
 	float MaxRange = 10000.0f;
+
+	// Applied via UGameplayStatics::ApplyPointDamage on hit - reaches any
+	// actor with an AActor::OnTakeAnyDamage listener, notably
+	// UALSHealthComponent, without this component needing to know about
+	// health at all.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "ALS|Weapon|Damage")
+	float DamagePerShot = 20.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "ALS|Weapon|Damage")
+	TSubclassOf<class UDamageType> DamageTypeClass;
+
+	// Damage is full strength up to this distance, then falls off linearly
+	// down to MinDamageMultiplier at MaxRange - real ballistics lose
+	// stopping power over distance, a flat hitscan number regardless of
+	// range never did.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "ALS|Weapon|Damage")
+	float DamageFalloffStartRange = 2000.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "ALS|Weapon|Damage")
+	float MinDamageMultiplier = 0.3f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "ALS|Weapon|Damage")
+	float HeadshotMultiplier = 2.5f;
+
+	// Bone name(s) considered a headshot, matched against FHitResult::BoneName.
+	// ALS_Mannequin_Skeleton (and stock Epic Manny/Quinn) name this "head".
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "ALS|Weapon|Damage")
+	FName HeadBoneName = TEXT("head");
 
 	// Spread half-angle in degrees per gait, applied around the aim
 	// direction. Tuned as a starting point, not measured against a real

@@ -17,6 +17,7 @@
 #include "TimerManager.h"
 #include "DrawDebugHelpers.h"
 #include "Kismet/KismetMathLibrary.h"
+#include "Kismet/GameplayStatics.h"
 #include "HAL/IConsoleManager.h"
 #include "UObject/ConstructorHelpers.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -1005,6 +1006,13 @@ void UALSWeaponFireComponent::Fire()
 		UE_LOG(LogTemp, Log, TEXT("ALSWeaponFireComponent::Fire - hit %s at %s"),
 			Hit.GetActor() ? *Hit.GetActor()->GetName() : TEXT("<no actor>"),
 			*Hit.ImpactPoint.ToString());
+
+		if (AActor* HitActor = Hit.GetActor())
+		{
+			const float DistanceFromMuzzle = FVector::Dist(MuzzleLocation, Hit.ImpactPoint);
+			const float FinalDamage = ComputeDamageForHit(Hit, DistanceFromMuzzle);
+			UGameplayStatics::ApplyPointDamage(HitActor, FinalDamage, FireDirection, Hit, PC, ALSChar, DamageTypeClass);
+		}
 	}
 	else
 	{
@@ -1021,4 +1029,16 @@ void UALSWeaponFireComponent::Fire()
 			StopFiring();
 		}
 	}
+}
+
+float UALSWeaponFireComponent::ComputeDamageForHit(const FHitResult& Hit, float DistanceFromMuzzle) const
+{
+	const float FalloffRange = FMath::Max(MaxRange - DamageFalloffStartRange, 1.0f);
+	const float FalloffAlpha = FMath::Clamp((DistanceFromMuzzle - DamageFalloffStartRange) / FalloffRange, 0.0f, 1.0f);
+	const float DistanceMultiplier = FMath::Lerp(1.0f, MinDamageMultiplier, FalloffAlpha);
+
+	const bool bIsHeadshot = !HeadBoneName.IsNone() && Hit.BoneName == HeadBoneName;
+	const float HitZoneMultiplier = bIsHeadshot ? HeadshotMultiplier : 1.0f;
+
+	return DamagePerShot * DistanceMultiplier * HitZoneMultiplier;
 }
