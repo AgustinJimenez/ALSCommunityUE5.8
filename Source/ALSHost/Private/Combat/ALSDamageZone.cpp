@@ -1,14 +1,17 @@
 #include "Combat/ALSDamageZone.h"
 
 #include "Components/BoxComponent.h"
+#include "Components/TextRenderComponent.h"
 #include "Kismet/GameplayStatics.h"
 #include "TimerManager.h"
 #include "Engine/World.h"
 #include "GameFramework/DamageType.h"
+#include "Camera/PlayerCameraManager.h"
 
 AALSDamageZone::AALSDamageZone()
 {
-	PrimaryActorTick.bCanEverTick = false;
+	// Ticks solely to keep LabelText facing the camera (see Tick()).
+	PrimaryActorTick.bCanEverTick = true;
 
 	// ApplyDamage with an unset DamageTypeClass doesn't reliably reach
 	// UALSHealthComponent's OnTakeAnyDamage handler the same way an explicit
@@ -30,6 +33,14 @@ AALSDamageZone::AALSDamageZone()
 	// own default Pawn preset.
 	TriggerVolume->SetCollisionProfileName(TEXT("OverlapAllDynamic"));
 	RootComponent = TriggerVolume;
+
+	LabelText = CreateDefaultSubobject<UTextRenderComponent>(TEXT("LabelText"));
+	LabelText->SetupAttachment(RootComponent);
+	LabelText->SetRelativeLocation(FVector(0.f, 0.f, 220.f));
+	LabelText->SetHorizontalAlignment(EHTA_Center);
+	LabelText->SetVerticalAlignment(EVRTA_TextBottom);
+	LabelText->SetWorldSize(28.f);
+	LabelText->SetTextRenderColor(FColor::Red);
 }
 
 void AALSDamageZone::BeginPlay()
@@ -40,6 +51,30 @@ void AALSDamageZone::BeginPlay()
 	TriggerVolume->OnComponentEndOverlap.AddDynamic(this, &AALSDamageZone::HandleEndOverlap);
 
 	GetWorldTimerManager().SetTimer(DamageTimerHandle, this, &AALSDamageZone::ApplyTick, DamageIntervalSeconds, /*bLoop=*/true);
+
+	if (LabelText)
+	{
+		LabelText->SetText(ZoneLabel);
+	}
+}
+
+void AALSDamageZone::Tick(float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+
+	if (!LabelText)
+	{
+		return;
+	}
+
+	if (const APlayerCameraManager* CameraManager = UGameplayStatics::GetPlayerCameraManager(this, 0))
+	{
+		const FVector ToCamera = CameraManager->GetCameraLocation() - LabelText->GetComponentLocation();
+		if (!ToCamera.IsNearlyZero())
+		{
+			LabelText->SetWorldRotation(ToCamera.Rotation());
+		}
+	}
 }
 
 void AALSDamageZone::HandleBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult)

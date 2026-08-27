@@ -6,6 +6,7 @@
 
 class USphereComponent;
 class UStaticMeshComponent;
+class UTextRenderComponent;
 
 // Common base for a world pickup: overlap-triggered, destroys itself once
 // picked up. Subclasses only implement OnPickedUp() - what actually happens
@@ -19,8 +20,18 @@ class ALSHOST_API AALSPickupBase : public AActor
 public:
 	AALSPickupBase();
 
+	// Floating text shown above the pickup (e.g. "Rifle", "Health Pack") -
+	// set per-instance in the level, purely cosmetic/identification, not
+	// tied to any inventory ItemID.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ALS|Pickup")
+	FText PickupLabel;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ALS|Pickup")
+	TObjectPtr<UTextRenderComponent> LabelText;
+
 protected:
 	virtual void BeginPlay() override;
+	virtual void Tick(float DeltaSeconds) override;
 
 	// Return true if the pawn actually consumed the pickup (destroys the
 	// actor and prevents further overlaps from doing anything). Return

@@ -5,6 +5,7 @@
 #include "ALSDamageZone.generated.h"
 
 class UBoxComponent;
+class UTextRenderComponent;
 
 // A simple hazard volume: applies DamagePerSecond (via ApplyDamage, so it
 // reaches anything with a UALSHealthComponent the same way weapon fire does)
@@ -32,8 +33,16 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ALS|Damage")
 	TObjectPtr<UBoxComponent> TriggerVolume;
 
+	// Floating text shown above the zone (e.g. "DANGER") - purely cosmetic.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ALS|Damage")
+	FText ZoneLabel = FText::FromString(TEXT("DANGER"));
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ALS|Damage")
+	TObjectPtr<UTextRenderComponent> LabelText;
+
 protected:
 	virtual void BeginPlay() override;
+	virtual void Tick(float DeltaSeconds) override;
 
 	UFUNCTION()
 	void HandleBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult);
