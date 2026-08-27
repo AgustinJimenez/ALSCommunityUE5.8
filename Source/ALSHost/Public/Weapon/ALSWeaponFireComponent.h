@@ -29,6 +29,14 @@ struct FALSWeaponAmmoStats
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, meta = (ClampMin = "0.1"))
 	float ReloadSeconds = 2.0f;
 
+	// Which UALSInventoryComponent item ID this weapon's reserve ammo is
+	// stored under - ammo pickups just AddItem() this ID, no separate
+	// per-weapon ammo system needed. Reload() only refills up to however
+	// much of this the inventory actually holds (see AGENTS.md - infinite
+	// ammo was removed, reloading now genuinely consumes reserve stock).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	FName AmmoItemID = TEXT("Ammo_Rifle");
+
 	// Played via PlaySlotAnimationAsDynamicMontage on the component's
 	// ReloadMontageSlotName - no hand-authored AnimMontage asset needed for
 	// a simple "play this once" reload. If unset, Reload() still runs the
@@ -490,4 +498,11 @@ private:
 	bool bAmmoSynced = false;
 	int32 CurrentAmmoInMagazine = 0;
 	bool bIsReloading = false;
+
+	// Rounds already pulled from the inventory's reserve ammo when Reload()
+	// started, added to CurrentAmmoInMagazine once FinishReload() runs.
+	// Pulling at Reload()-start (not FinishReload()) means the reserve count
+	// visibly drops the moment reload begins, matching real behavior - you
+	// don't get to change your mind and un-holster the rounds mid-reload.
+	int32 PendingReloadAmount = 0;
 };

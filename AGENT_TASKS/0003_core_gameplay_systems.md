@@ -259,3 +259,35 @@ itself isn't separately unit-tested yet either, worth adding). A live PIE
 pass from the user is still the way to check those, but the core gameplay
 logic - the part most likely to have an actual bug - now has real coverage
 that will keep working on every future change, not just this one.
+
+## Update: weapon/ammo pickups, reserve ammo, damage zone
+
+Reused the existing generic inventory system (`UALSInventoryComponent`,
+`AALSItemPickup`, `AALSHealthPickup` - already had stacking, MaxStack,
+overlap-pickup, and a toggleable list widget) rather than rebuilding it.
+Ammo needed no new class - an `AALSItemPickup` with `ItemID="Ammo_Rifle"`
+placed in the level is a stackable ammo pickup as-is. Added:
+
+- `AALSWeaponPickup` - equips a weapon directly via `SetOverlayState`
+  (there's no multi-weapon-carry system to add a slot to; `UALSWeaponFireComponent`
+  only has one active weapon, whichever overlay state is current, and only
+  Rifle has a working muzzle socket) and grants a configurable bonus ammo
+  quantity into the inventory on pickup.
+- `AALSDamageZone` - a box trigger that ticks `ApplyDamage` on a timer against
+  everything currently overlapping it, for testing health pickups/regen
+  without needing an enemy nearby.
+- **Infinite ammo removed**: `FALSWeaponAmmoStats` gained `AmmoItemID`;
+  `Reload()` now only tops the magazine up by however much of that item the
+  character's inventory actually holds (pulled from inventory at
+  `Reload()`-start, refunded if a weapon-swap cancels the reload mid-way),
+  and is a flat no-op with zero reserve rather than a free refill.
+
+Test coverage: `ALSPickupTests.cpp` gained
+`WeaponPickup_OverlappedByCharacter_EquipsOverlayAndGrantsAmmo`;
+`ALSWeaponAmmoTests.cpp` (new) covers reload-with-no-reserve (no-op) and
+reload-with-limited-reserve (tops up to exactly what's available, consumes
+it from inventory); `ALSDamageZoneTests.cpp` (new) covers sustained damage
+over time. The damage-zone test hit two real CQTest gotchas (temp level has
+no floor; a spawned actor's own `BeginPlay()` runs synchronously inside
+`SpawnActorAt`, too early for properties set on the line after) - see
+`docs/testing.md` and `AGENTS.md` for the full writeup.

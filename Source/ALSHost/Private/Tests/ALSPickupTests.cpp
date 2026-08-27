@@ -5,9 +5,11 @@
 #include "Components/MapTestSpawner.h"
 #include "Inventory/ALSItemPickup.h"
 #include "Inventory/ALSHealthPickup.h"
+#include "Inventory/ALSWeaponPickup.h"
 #include "Inventory/ALSInventoryComponent.h"
 #include "Combat/ALSHealthComponent.h"
 #include "Character/ALSCharacter.h"
+#include "Library/ALSCharacterEnumLibrary.h"
 #include "Kismet/GameplayStatics.h"
 #include "GameFramework/DamageType.h"
 
@@ -107,6 +109,31 @@ TEST_CLASS(ALSPickupTests, "ALSHost.Inventory")
 			.Then([this]() {
 				ASSERT_THAT(IsNotNull(Pickup));
 				ASSERT_THAT(IsFalse(Pickup->IsActorBeingDestroyed()));
+			});
+	}
+
+	TEST_METHOD(WeaponPickup_OverlappedByCharacter_EquipsOverlayAndGrantsAmmo)
+	{
+		TestCommandBuilder
+			.StartWhen([this]() { return Spawner.IsValid(); })
+			.Then([this]() {
+				SpawnCharacterAt(FVector::ZeroVector);
+				ASSERT_THAT(IsNotNull(Character));
+				ASSERT_THAT(IsTrue(Character->GetOverlayState() != EALSOverlayState::Rifle));
+
+				AALSWeaponPickup& WeaponPickup = Spawner->SpawnActorAt<AALSWeaponPickup>(FVector(FarAwayOffset, 0.f, 0.f), FRotator::ZeroRotator);
+				WeaponPickup.OverlayStateToEquip = EALSOverlayState::Rifle;
+				WeaponPickup.AmmoItemID = TEXT("Ammo_Rifle");
+				WeaponPickup.BonusAmmoQuantity = 60;
+				WeaponPickup.SetActorLocation(FVector::ZeroVector, /*bSweep=*/true);
+			})
+			.WaitDelay(FTimespan::FromSeconds(0.3))
+			.Then([this]() {
+				ASSERT_THAT(IsTrue(Character->GetOverlayState() == EALSOverlayState::Rifle));
+
+				UALSInventoryComponent* Inventory = Character->FindComponentByClass<UALSInventoryComponent>();
+				ASSERT_THAT(IsNotNull(Inventory));
+				ASSERT_THAT(IsTrue(Inventory->HasItem(TEXT("Ammo_Rifle"), 60)));
 			});
 	}
 };

@@ -29,6 +29,7 @@
 #include "Weapon/ALSProjectile.h"
 #include "GameFramework/ProjectileMovementComponent.h"
 #include "InputCoreTypes.h"
+#include "Inventory/ALSInventoryComponent.h"
 
 // Defaults to true while this feature is under active development, since
 // the editor gets restarted frequently for rebuilds and this CVar (like all
@@ -558,6 +559,7 @@ void UALSWeaponFireComponent::SyncAmmoForCurrentWeapon(const AALSBaseCharacter* 
 		return;
 	}
 
+	const EALSOverlayState PreviousState = LastSyncedOverlayState;
 	LastSyncedOverlayState = CurrentState;
 	bAmmoSynced = true;
 
@@ -574,12 +576,26 @@ void UALSWeaponFireComponent::SyncAmmoForCurrentWeapon(const AALSBaseCharacter* 
 	}
 
 	// Switching weapons cancels an in-progress reload of the previous one.
+	// The reserve rounds already pulled at Reload()-start would otherwise
+	// just vanish - refund them rather than punishing a weapon swap.
 	if (bIsReloading)
 	{
 		bIsReloading = false;
 		if (UWorld* World = GetWorld())
 		{
 			World->GetTimerManager().ClearTimer(ReloadTimerHandle);
+		}
+
+		if (PendingReloadAmount > 0)
+		{
+			if (const FALSWeaponAmmoStats* PreviousStats = AmmoStatsByOverlayState.Find(PreviousState))
+			{
+				if (UALSInventoryComponent* Inventory = GetOwner()->FindComponentByClass<UALSInventoryComponent>())
+				{
+					Inventory->AddItem(PreviousStats->AmmoItemID, FText::GetEmpty(), PendingReloadAmount, TNumericLimits<int32>::Max());
+				}
+			}
+			PendingReloadAmount = 0;
 		}
 	}
 }
@@ -606,6 +622,21 @@ void UALSWeaponFireComponent::Reload()
 	{
 		return;
 	}
+
+	// No infinite ammo: only pull from whatever reserve the inventory
+	// actually holds. No UALSInventoryComponent at all, or zero reserve,
+	// means the reload simply can't start - a dry click, not a free refill.
+	UALSInventoryComponent* Inventory = ALSChar ? ALSChar->FindComponentByClass<UALSInventoryComponent>() : nullptr;
+	const int32 ReserveAvailable = Inventory ? Inventory->GetItemQuantity(Stats->AmmoItemID) : 0;
+	if (ReserveAvailable <= 0)
+	{
+		UE_LOG(LogTemp, Log, TEXT("ALSWeaponFireComponent::Reload - no reserve ammo (%s) to reload with"), *Stats->AmmoItemID.ToString());
+		return;
+	}
+
+	const int32 AmountNeeded = Stats->MagazineSize - CurrentAmmoInMagazine;
+	PendingReloadAmount = FMath::Min(AmountNeeded, ReserveAvailable);
+	Inventory->RemoveItem(Stats->AmmoItemID, PendingReloadAmount);
 
 	// Full-auto should not keep firing through a reload.
 	StopFiring();
@@ -658,10 +689,10 @@ void UALSWeaponFireComponent::Reload()
 void UALSWeaponFireComponent::FinishReload()
 {
 	AALSCharacter* ALSChar = Cast<AALSCharacter>(GetOwner());
-	const FALSWeaponAmmoStats* Stats = ALSChar ? AmmoStatsByOverlayState.Find(ALSChar->GetOverlayState()) : nullptr;
 
 	bIsReloading = false;
-	CurrentAmmoInMagazine = Stats ? Stats->MagazineSize : CurrentAmmoInMagazine;
+	CurrentAmmoInMagazine += PendingReloadAmount;
+	PendingReloadAmount = 0;
 
 	if (bHeldObjectTransformSaved && ALSChar && ALSChar->HeldObjectRoot)
 	{
