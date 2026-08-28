@@ -10,7 +10,13 @@ AALSWeaponPickup::AALSWeaponPickup()
 {
 	// The inherited static Mesh is a placeholder Cube/Sphere and can't
 	// display a real (skeletal) weapon mesh - hide it rather than remove it,
-	// so AALSPickupBase's shared logic keeps working unmodified.
+	// so AALSPickupBase's shared logic keeps working unmodified. It's now
+	// also the actual physics-simulating root (see AALSPickupBase), so
+	// shrink it well below the base's own 0.5x scale - at full/half scale
+	// the placeholder sphere's resting radius left the visible WeaponMesh
+	// (rigidly attached at zero offset) floating ~25-50 units above the
+	// ground. Shrunk this far the same mismatch is a few cm, negligible.
+	Mesh->SetRelativeScale3D(FVector(0.1f));
 	Mesh->SetHiddenInGame(true);
 	Mesh->SetVisibility(false);
 

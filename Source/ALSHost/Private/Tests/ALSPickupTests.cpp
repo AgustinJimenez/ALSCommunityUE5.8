@@ -10,6 +10,7 @@
 #include "Inventory/ALSInventoryComponent.h"
 #include "Combat/ALSHealthComponent.h"
 #include "Character/ALSCharacter.h"
+#include "GameFramework/CharacterMovementComponent.h"
 #include "Library/ALSCharacterEnumLibrary.h"
 #include "Kismet/GameplayStatics.h"
 #include "GameFramework/DamageType.h"
@@ -41,6 +42,13 @@ TEST_CLASS(ALSPickupTests, "ALSHost.Inventory")
 			return;
 		}
 		Character = &Spawner->SpawnActorAt<AALSCharacter>(Location, FRotator::ZeroRotator, FActorSpawnParameters(), CharClass);
+		// Pickups now physically block the player (see AALSPickupBase) - a
+		// swept-in pickup can nudge a still-falling, movement-enabled
+		// character (the temp level has no floor) away from where the next
+		// pickup's sweep targets, causing that overlap to miss. Disable
+		// movement so the character stays put across multiple pickups in
+		// the same test, matching ALSMedkitComponentTests/ALSDamageZoneTests.
+		Character->GetCharacterMovement()->DisableMovement();
 	}
 
 	// Pickups are spawned well away from the character, not on top of it -
@@ -71,6 +79,28 @@ TEST_CLASS(ALSPickupTests, "ALSHost.Inventory")
 				UALSInventoryComponent* Inventory = Character->FindComponentByClass<UALSInventoryComponent>();
 				ASSERT_THAT(IsNotNull(Inventory));
 				ASSERT_THAT(IsTrue(Inventory->HasItem(TEXT("TestItem"), 3)));
+			});
+	}
+
+	// Guards the pickup-physics change: Mesh is now the root and simulates
+	// physics (PhysicsActor profile) so a pickup falls under gravity and
+	// rests on the ground instead of floating at its placed height. Spawn
+	// high up, far from the character (so no overlap fires), and confirm Z
+	// actually decreases after a short real tick - this is the only
+	// reliable way to observe physics motion at all, since every MCP
+	// actor-query tool resolves to the editor world, not a live PIE world
+	// (see docs/mcp-notes.md), so a floating-item report can't be diagnosed
+	// by just reading actor transforms through the MCP bridge.
+	TEST_METHOD(HealthPickup_SpawnedInAir_FallsUnderGravity)
+	{
+		TestCommandBuilder
+			.StartWhen([this]() { return Spawner.IsValid(); })
+			.Then([this]() {
+				Pickup = &Spawner->SpawnActorAt<AALSHealthPickup>(FVector(FarAwayOffset, 0.f, 500.f), FRotator::ZeroRotator);
+			})
+			.WaitDelay(FTimespan::FromSeconds(0.5))
+			.Then([this]() {
+				ASSERT_THAT(IsTrue(Pickup->GetActorLocation().Z < 490.f));
 			});
 	}
 
