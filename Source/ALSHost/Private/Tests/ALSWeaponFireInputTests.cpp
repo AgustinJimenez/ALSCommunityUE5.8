@@ -5,6 +5,7 @@
 #include "Components/MapTestSpawner.h"
 #include "Components/InputTestActions.h"
 #include "Weapon/ALSWeaponFireComponent.h"
+#include "Inventory/ALSInventoryComponent.h"
 #include "Character/ALSCharacter.h"
 #include "Library/ALSCharacterEnumLibrary.h"
 #include "Kismet/GameplayStatics.h"
@@ -24,6 +25,15 @@ struct FALSFireTestAction : public FTestAction
 	}
 };
 
+struct FALSToggleInventoryTestAction : public FTestAction
+{
+	FALSToggleInventoryTestAction()
+	{
+		InputActionName = TEXT("IA_ToggleInventory");
+		InputActionValue = FInputActionValue(true);
+	}
+};
+
 class FALSShooterTestActions : public FInputTestActions
 {
 public:
@@ -34,6 +44,11 @@ public:
 	void PressFire()
 	{
 		PerformAction(FALSFireTestAction{});
+	}
+
+	void PressToggleInventory()
+	{
+		PerformAction(FALSToggleInventoryTestAction{});
 	}
 };
 
@@ -245,6 +260,63 @@ TEST_CLASS(ALSWeaponFireInputTests, "ALSHost.Weapon")
 			})
 			.Then([this]() {
 				ASSERT_THAT(IsTrue(Shooter->GetRotationMode() != EALSRotationMode::Aiming));
+			});
+	}
+
+	int32 AmmoBeforeInventoryOpened = -1;
+
+	TEST_METHOD(PressingFireAction_WhileInventoryOpen_DoesNotFire)
+	{
+		// User report: "when on the inventory open, the gun shoot with
+		// click feature must not work" - the Q debug menu suspends
+		// FireInputMappingContext entirely while open so a click on a menu
+		// option doesn't also fire; the inventory panel (a separate
+		// component) didn't do the equivalent, so left-click both clicked
+		// the UI and fired the weapon underneath it. StartFiring() now
+		// checks UALSInventoryComponent::IsInventoryUIOpen() directly.
+		TestCommandBuilder
+			.StartWhen([this]() { return Spawner.IsValid(); })
+			.Then([this]() {
+				UClass* CharClass = LoadClass<AALSCharacter>(nullptr, TEXT("/ALSV4_CPP/AdvancedLocomotionV4/Blueprints/CharacterLogic/ALS_CharacterBP.ALS_CharacterBP_C"));
+				ASSERT_THAT(IsNotNull(CharClass));
+
+				Shooter = &Spawner->SpawnActorAt<AALSCharacter>(FVector::ZeroVector, FRotator::ZeroRotator, FActorSpawnParameters(), CharClass);
+				Weapon = Shooter->FindComponentByClass<UALSWeaponFireComponent>();
+				ASSERT_THAT(IsNotNull(Weapon));
+				Shooter->SetOverlayState(EALSOverlayState::Rifle);
+
+				APlayerController* PC = UGameplayStatics::GetPlayerController(&Spawner->GetWorld(), 0);
+				ASSERT_THAT(IsNotNull(PC));
+				PC->Possess(Shooter);
+
+				// One direct Fire() call to force SyncAmmoForCurrentWeapon to
+				// run (lazily synced on first Fire()/Reload() - see
+				// ALSWeaponFireComponent.h) - without this,
+				// GetCurrentAmmoInMagazine() would still read its unsynced
+				// default of 0, indistinguishable from "emptied by firing"
+				// below (the exact wrong-baseline mistake documented for the
+				// sprint test earlier in this project's history).
+				Weapon->Fire();
+				AmmoBeforeInventoryOpened = Weapon->GetCurrentAmmoInMagazine();
+				ASSERT_THAT(IsTrue(AmmoBeforeInventoryOpened == 29));
+
+				ShooterActions = MakeUnique<FALSShooterTestActions>(Shooter);
+			})
+			.WaitDelay(FTimespan::FromSeconds(0.2))
+			.Then([this]() { ShooterActions->PressToggleInventory(); })
+			.WaitDelay(FTimespan::FromSeconds(0.2))
+			.Then([this]() {
+				UALSInventoryComponent* Inventory = Shooter->FindComponentByClass<UALSInventoryComponent>();
+				ASSERT_THAT(IsNotNull(Inventory));
+				ASSERT_THAT(IsTrue(Inventory->IsInventoryUIOpen()));
+
+				ShooterActions->PressFire();
+			})
+			.WaitDelay(FTimespan::FromSeconds(0.5))
+			.Then([this]() {
+				// Ammo unchanged from the pre-inventory baseline -
+				// StartFiring() bailed out before ever calling Fire() again.
+				ASSERT_THAT(IsTrue(Weapon->GetCurrentAmmoInMagazine() == AmmoBeforeInventoryOpened));
 			});
 	}
 };

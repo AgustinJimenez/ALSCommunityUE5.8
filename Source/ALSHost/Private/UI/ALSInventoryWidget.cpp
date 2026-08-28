@@ -8,7 +8,6 @@
 #include "UI/ALSDebugMenuRowWidget.h"
 #include "UI/ALSInventoryContextMenuWidget.h"
 #include "Character/ALSCharacter.h"
-#include "Blueprint/SlateBlueprintLibrary.h"
 
 void UALSInventoryWidget::NativeConstruct()
 {
@@ -18,7 +17,20 @@ void UALSInventoryWidget::NativeConstruct()
 	{
 		if (UALSInventoryComponent* Inventory = Pawn->FindComponentByClass<UALSInventoryComponent>())
 		{
-			Inventory->OnInventoryChanged.AddDynamic(this, &UALSInventoryWidget::HandleInventoryChanged);
+			// NativeConstruct runs again every time this same widget instance
+			// is re-added to the viewport (UALSInventoryComponent caches and
+			// reuses one instance, toggling AddToViewport/RemoveFromParent -
+			// RemoveFromParent -> AddToViewport re-triggers Construct(), not
+			// just the first time). Binding unconditionally here duplicated
+			// this delegate on every open after the first, crashing on the
+			// second open with an ensure failure in
+			// TMulticastScriptDelegate::AddInternal ("delegate already
+			// bound") - guard with IsAlreadyBound so re-opening is a no-op
+			// here instead.
+			if (!Inventory->OnInventoryChanged.IsAlreadyBound(this, &UALSInventoryWidget::HandleInventoryChanged))
+			{
+				Inventory->OnInventoryChanged.AddDynamic(this, &UALSInventoryWidget::HandleInventoryChanged);
+			}
 		}
 	}
 
@@ -90,7 +102,7 @@ void UALSInventoryWidget::RefreshItemsList()
 			if (Item.bEquippable)
 			{
 				const FName ItemID = Item.ItemID;
-				Row->SetOnRightClicked([this, ItemID](const FVector2D& ScreenPosition) { ShowContextMenu(ItemID, ScreenPosition); });
+				Row->SetOnRightClicked([this, ItemID](const FVector2D&) { ShowContextMenu(ItemID); });
 			}
 
 			ItemsList->AddChildToVerticalBox(Row);
@@ -98,7 +110,7 @@ void UALSInventoryWidget::RefreshItemsList()
 	}
 }
 
-void UALSInventoryWidget::ShowContextMenu(FName ItemID, const FVector2D& ScreenPosition)
+void UALSInventoryWidget::ShowContextMenu(FName ItemID)
 {
 	if (!ContextMenuWidgetClass || !RootCanvas)
 	{
@@ -112,9 +124,19 @@ void UALSInventoryWidget::ShowContextMenu(FName ItemID, const FVector2D& ScreenP
 		{
 			if (UCanvasPanelSlot* MenuSlot = RootCanvas->AddChildToCanvas(ContextMenu))
 			{
-				MenuSlot->SetAnchors(FAnchors(0.f, 0.f));
-				MenuSlot->SetAlignment(FVector2D(0.f, 0.f));
+				// Fixed, centered position rather than tracking the cursor -
+				// a ScreenToViewport-based placement was tried first and
+				// produced wildly mismatched coordinates (screen X=2682
+				// converting to viewport X=4407, well outside the visible
+				// canvas - a DPI/resolution scale mismatch between "screen"
+				// and "viewport" space), so the menu was always rendering
+				// off-canvas. Same fixed-anchor approach the working Q-menu
+				// submenu (UALSDebugPropMenuWidget's DebugModesSubmenu)
+				// already uses successfully.
+				MenuSlot->SetAnchors(FAnchors(0.5f, 0.5f));
+				MenuSlot->SetAlignment(FVector2D(0.5f, 0.5f));
 				MenuSlot->SetAutoSize(true);
+				MenuSlot->SetPosition(FVector2D::ZeroVector);
 			}
 		}
 	}
@@ -122,14 +144,6 @@ void UALSInventoryWidget::ShowContextMenu(FName ItemID, const FVector2D& ScreenP
 	if (!ContextMenu)
 	{
 		return;
-	}
-
-	FVector2D ViewportPosition;
-	USlateBlueprintLibrary::ScreenToViewport(this, ScreenPosition, ViewportPosition);
-
-	if (UCanvasPanelSlot* MenuSlot = Cast<UCanvasPanelSlot>(ContextMenu->Slot))
-	{
-		MenuSlot->SetPosition(ViewportPosition);
 	}
 
 	ContextMenu->Setup([this, ItemID]() {

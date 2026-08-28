@@ -422,6 +422,23 @@ void UALSWeaponFireComponent::StartFiring()
 	}
 
 	AALSCharacter* ALSChar = Cast<AALSCharacter>(GetOwner());
+
+	// The Q debug menu suspends FireInputMappingContext entirely while open
+	// (see HandleDebugOverlayMenuOpened), so left-click can't both fire and
+	// click a menu option underneath the cursor. UALSInventoryComponent is a
+	// separate, sibling component and can't reach this one's protected
+	// FireInputMappingContext to do the same - checking whether its UI is
+	// open here is simpler than exposing cross-component context access for
+	// this alone, and is exactly what a click on the inventory panel needs:
+	// don't also fire the weapon underneath it.
+	if (const UALSInventoryComponent* Inventory = ALSChar ? ALSChar->FindComponentByClass<UALSInventoryComponent>() : nullptr)
+	{
+		if (Inventory->IsInventoryUIOpen())
+		{
+			return;
+		}
+	}
+
 	if (ALSChar)
 	{
 		// Only enter the Aiming rotation mode (and therefore the camera zoom

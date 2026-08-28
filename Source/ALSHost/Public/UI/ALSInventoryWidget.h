@@ -60,7 +60,7 @@ private:
 	void HandleInventoryChanged();
 
 	void RefreshItemsList();
-	void ShowContextMenu(FName ItemID, const FVector2D& ScreenPosition);
+	void ShowContextMenu(FName ItemID);
 
 	UPROPERTY()
 	TObjectPtr<UALSInventoryContextMenuWidget> ContextMenu;
