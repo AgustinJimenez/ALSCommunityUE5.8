@@ -14,6 +14,26 @@ AALSPickupBase::AALSPickupBase()
 	// UTextRenderComponent has no built-in billboard-to-camera behavior.
 	PrimaryActorTick.bCanEverTick = true;
 
+	// Mesh is the root (not TriggerSphere) so it can simulate physics - a
+	// dropped/placed pickup falls under gravity and rests on the ground
+	// like a real object, and the player can bump/kick it, using the
+	// engine's stock "PhysicsActor" profile (blocks world geometry and
+	// pawns). TriggerSphere and LabelText attach to it as children so they
+	// fall and settle together with it; TriggerSphere's own OverlapAllDynamic
+	// profile keeps pickup-on-approach working exactly as before regardless
+	// of how Mesh's own collision responds.
+	Mesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("Mesh"));
+	Mesh->SetCollisionProfileName(TEXT("PhysicsActor"));
+	Mesh->SetSimulatePhysics(true);
+	Mesh->SetRelativeScale3D(FVector(0.5f));
+	RootComponent = Mesh;
+
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> DefaultMeshFinder(TEXT("/Engine/BasicShapes/Sphere.Sphere"));
+	if (DefaultMeshFinder.Succeeded())
+	{
+		Mesh->SetStaticMesh(DefaultMeshFinder.Object);
+	}
+
 	TriggerSphere = CreateDefaultSubobject<USphereComponent>(TEXT("TriggerSphere"));
 	TriggerSphere->InitSphereRadius(75.f);
 	// "OverlapAllDynamic" (a stock engine collision profile) rather than
@@ -24,18 +44,7 @@ AALSPickupBase::AALSPickupBase()
 	// preset is not. This profile is built specifically for trigger/pickup
 	// volumes and avoids that mismatch.
 	TriggerSphere->SetCollisionProfileName(TEXT("OverlapAllDynamic"));
-	RootComponent = TriggerSphere;
-
-	Mesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("Mesh"));
-	Mesh->SetupAttachment(RootComponent);
-	Mesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	Mesh->SetRelativeScale3D(FVector(0.5f));
-
-	static ConstructorHelpers::FObjectFinder<UStaticMesh> DefaultMeshFinder(TEXT("/Engine/BasicShapes/Sphere.Sphere"));
-	if (DefaultMeshFinder.Succeeded())
-	{
-		Mesh->SetStaticMesh(DefaultMeshFinder.Object);
-	}
+	TriggerSphere->SetupAttachment(RootComponent);
 
 	LabelText = CreateDefaultSubobject<UTextRenderComponent>(TEXT("LabelText"));
 	LabelText->SetupAttachment(RootComponent);
