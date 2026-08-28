@@ -15,12 +15,13 @@
 #include "Kismet/GameplayStatics.h"
 #include "GameFramework/DamageType.h"
 #include "GameFramework/PlayerController.h"
+#include "Interaction/ALSInteractable.h"
 #include "UI/ALSInventoryWidget.h"
 #include "Blueprint/UserWidget.h"
 
-// Overlap-triggered pickups need real physics/collision, which (like
-// BeginPlay-dependent component logic - see docs/testing.md) needs
-// FMapTestSpawner, not FActorTestSpawner.
+// Interact-triggered pickups (press E, see AALSPickupBase) still need real
+// physics/collision and BeginPlay-dependent component logic (see
+// docs/testing.md), so FMapTestSpawner, not FActorTestSpawner.
 TEST_CLASS(ALSPickupTests, "ALSHost.Inventory")
 {
 	TUniquePtr<FMapTestSpawner> Spawner;
@@ -42,25 +43,20 @@ TEST_CLASS(ALSPickupTests, "ALSHost.Inventory")
 			return;
 		}
 		Character = &Spawner->SpawnActorAt<AALSCharacter>(Location, FRotator::ZeroRotator, FActorSpawnParameters(), CharClass);
-		// Pickups now physically block the player (see AALSPickupBase) - a
-		// swept-in pickup can nudge a still-falling, movement-enabled
-		// character (the temp level has no floor) away from where the next
-		// pickup's sweep targets, causing that overlap to miss. Disable
-		// movement so the character stays put across multiple pickups in
-		// the same test, matching ALSMedkitComponentTests/ALSDamageZoneTests.
+		// The temp level has no floor (see docs/testing.md) - keep the
+		// character from free-falling for the test's duration.
 		Character->GetCharacterMovement()->DisableMovement();
 	}
 
-	// Pickups are spawned well away from the character, not on top of it -
-	// a pickup's overlap (and therefore OnPickedUp) fires *synchronously*
-	// during SpawnActor if it's already overlapping at spawn, which is
-	// before any properties set on the returned reference (ItemID,
-	// HealAmount, ...) take effect. Configure first, then SetActorLocation
-	// with sweep to move it into the character and trigger the overlap for
-	// real, matching how a dropped-then-walked-into pickup actually behaves.
+	// Pickups no longer need to be swept into the character - Interact()
+	// (IALSInteractable, what pressing E actually calls) runs synchronously
+	// regardless of proximity, so spawn location doesn't matter for these
+	// tests. Still spawned away from the character (rather than at the same
+	// location) purely so a pickup's PhysicsActor collision doesn't
+	// interpenetrate the character capsule at spawn.
 	static constexpr float FarAwayOffset = 2000.f;
 
-	TEST_METHOD(ItemPickup_OverlappedByCharacter_AddsToInventory_AndDestroysSelf)
+	TEST_METHOD(ItemPickup_Interacted_AddsToInventory_AndDestroysSelf)
 	{
 		TestCommandBuilder
 			.StartWhen([this]() { return Spawner.IsValid(); })
@@ -68,14 +64,13 @@ TEST_CLASS(ALSPickupTests, "ALSHost.Inventory")
 				SpawnCharacterAt(FVector::ZeroVector);
 				ASSERT_THAT(IsNotNull(Character));
 
-				AALSItemPickup& Pickup = Spawner->SpawnActorAt<AALSItemPickup>(FVector(FarAwayOffset, 0.f, 0.f), FRotator::ZeroRotator);
-				Pickup.ItemID = TEXT("TestItem");
-				Pickup.DisplayName = FText::FromString(TEXT("Test Item"));
-				Pickup.Quantity = 3;
-				Pickup.SetActorLocation(FVector::ZeroVector, /*bSweep=*/true);
-			})
-			.WaitDelay(FTimespan::FromSeconds(0.3))
-			.Then([this]() {
+				AALSItemPickup& ItemPickup = Spawner->SpawnActorAt<AALSItemPickup>(FVector(FarAwayOffset, 0.f, 0.f), FRotator::ZeroRotator);
+				ItemPickup.ItemID = TEXT("TestItem");
+				ItemPickup.DisplayName = FText::FromString(TEXT("Test Item"));
+				ItemPickup.Quantity = 3;
+
+				IALSInteractable::Execute_Interact(&ItemPickup, Character);
+
 				UALSInventoryComponent* Inventory = Character->FindComponentByClass<UALSInventoryComponent>();
 				ASSERT_THAT(IsNotNull(Inventory));
 				ASSERT_THAT(IsTrue(Inventory->HasItem(TEXT("TestItem"), 3)));
@@ -104,7 +99,7 @@ TEST_CLASS(ALSPickupTests, "ALSHost.Inventory")
 			});
 	}
 
-	TEST_METHOD(HealthPickup_OverlappedByDamagedCharacter_Heals)
+	TEST_METHOD(HealthPickup_InteractedByDamagedCharacter_Heals)
 	{
 		TestCommandBuilder
 			.StartWhen([this]() { return Spawner.IsValid(); })
@@ -118,10 +113,8 @@ TEST_CLASS(ALSPickupTests, "ALSHost.Inventory")
 
 				AALSHealthPickup& HealthPickup = Spawner->SpawnActorAt<AALSHealthPickup>(FVector(FarAwayOffset, 0.f, 0.f), FRotator::ZeroRotator);
 				HealthPickup.HealAmount = 25.f;
-				HealthPickup.SetActorLocation(FVector::ZeroVector, /*bSweep=*/true);
-			})
-			.WaitDelay(FTimespan::FromSeconds(0.3))
-			.Then([this]() {
+				IALSInteractable::Execute_Interact(&HealthPickup, Character);
+
 				UALSHealthComponent* Health = Character->FindComponentByClass<UALSHealthComponent>();
 				ASSERT_THAT(IsNotNull(Health));
 				// Started at MaxHealth(100) - 40 damage = 60, then +25 heal = 85.
@@ -129,7 +122,7 @@ TEST_CLASS(ALSPickupTests, "ALSHost.Inventory")
 			});
 	}
 
-	TEST_METHOD(HealthPickup_OverlappedByFullHealthCharacter_IsNotConsumed)
+	TEST_METHOD(HealthPickup_InteractedByFullHealthCharacter_IsNotConsumed)
 	{
 		TestCommandBuilder
 			.StartWhen([this]() { return Spawner.IsValid(); })
@@ -137,16 +130,13 @@ TEST_CLASS(ALSPickupTests, "ALSHost.Inventory")
 				SpawnCharacterAt(FVector::ZeroVector);
 				ASSERT_THAT(IsNotNull(Character));
 				Pickup = &Spawner->SpawnActorAt<AALSHealthPickup>(FVector(FarAwayOffset, 0.f, 0.f), FRotator::ZeroRotator);
-				Pickup->SetActorLocation(FVector::ZeroVector, /*bSweep=*/true);
-			})
-			.WaitDelay(FTimespan::FromSeconds(0.3))
-			.Then([this]() {
-				ASSERT_THAT(IsNotNull(Pickup));
+				IALSInteractable::Execute_Interact(Pickup, Character);
+
 				ASSERT_THAT(IsFalse(Pickup->IsActorBeingDestroyed()));
 			});
 	}
 
-	TEST_METHOD(WeaponPickup_OverlappedByCharacter_EquipsOverlayAndGrantsAmmo)
+	TEST_METHOD(WeaponPickup_Interacted_EquipsOverlayAndGrantsAmmo)
 	{
 		TestCommandBuilder
 			.StartWhen([this]() { return Spawner.IsValid(); })
@@ -160,10 +150,8 @@ TEST_CLASS(ALSPickupTests, "ALSHost.Inventory")
 				WeaponPickup.WeaponItemID = TEXT("Weapon_Rifle");
 				WeaponPickup.AmmoItemID = TEXT("Ammo_Rifle");
 				WeaponPickup.BonusAmmoQuantity = 60;
-				WeaponPickup.SetActorLocation(FVector::ZeroVector, /*bSweep=*/true);
-			})
-			.WaitDelay(FTimespan::FromSeconds(0.3))
-			.Then([this]() {
+				IALSInteractable::Execute_Interact(&WeaponPickup, Character);
+
 				ASSERT_THAT(IsTrue(Character->GetOverlayState() == EALSOverlayState::Rifle));
 
 				UALSInventoryComponent* Inventory = Character->FindComponentByClass<UALSInventoryComponent>();
@@ -200,20 +188,16 @@ TEST_CLASS(ALSPickupTests, "ALSHost.Inventory")
 				PistolPickup.OverlayStateToEquip = EALSOverlayState::PistolOneHanded;
 				PistolPickup.WeaponItemID = TEXT("Weapon_Pistol");
 				PistolPickup.BonusAmmoQuantity = 0;
-				PistolPickup.SetActorLocation(FVector::ZeroVector, /*bSweep=*/true);
-			})
-			.WaitDelay(FTimespan::FromSeconds(0.3))
-			.Then([this]() {
+				IALSInteractable::Execute_Interact(&PistolPickup, Character);
+
 				ASSERT_THAT(IsTrue(Character->GetOverlayState() == EALSOverlayState::PistolOneHanded));
 
 				AALSWeaponPickup& RiflePickup = Spawner->SpawnActorAt<AALSWeaponPickup>(FVector(FarAwayOffset, 0.f, 0.f), FRotator::ZeroRotator);
 				RiflePickup.OverlayStateToEquip = EALSOverlayState::Rifle;
 				RiflePickup.WeaponItemID = TEXT("Weapon_Rifle");
 				RiflePickup.BonusAmmoQuantity = 0;
-				RiflePickup.SetActorLocation(FVector::ZeroVector, /*bSweep=*/true);
-			})
-			.WaitDelay(FTimespan::FromSeconds(0.3))
-			.Then([this]() {
+				IALSInteractable::Execute_Interact(&RiflePickup, Character);
+
 				ASSERT_THAT(IsTrue(Character->GetOverlayState() == EALSOverlayState::Rifle));
 
 				UALSInventoryComponent* Inventory = Character->FindComponentByClass<UALSInventoryComponent>();

@@ -1,6 +1,5 @@
 #include "Inventory/ALSPickupBase.h"
 
-#include "Components/SphereComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/TextRenderComponent.h"
 #include "GameFramework/Pawn.h"
@@ -14,14 +13,13 @@ AALSPickupBase::AALSPickupBase()
 	// UTextRenderComponent has no built-in billboard-to-camera behavior.
 	PrimaryActorTick.bCanEverTick = true;
 
-	// Mesh is the root (not TriggerSphere) so it can simulate physics - a
-	// dropped/placed pickup falls under gravity and rests on the ground
-	// like a real object, and the player can bump/kick it, using the
-	// engine's stock "PhysicsActor" profile (blocks world geometry and
-	// pawns). TriggerSphere and LabelText attach to it as children so they
-	// fall and settle together with it; TriggerSphere's own OverlapAllDynamic
-	// profile keeps pickup-on-approach working exactly as before regardless
-	// of how Mesh's own collision responds.
+	// Mesh is the root so it can simulate physics - a dropped/placed pickup
+	// falls under gravity and rests on the ground like a real object, and
+	// the player can bump/kick it, using the engine's stock "PhysicsActor"
+	// profile (blocks world geometry and pawns, and blocks the Visibility
+	// trace channel IALSInteractable's line-trace-based Interact key uses,
+	// so this doubles as the interact hit target with no separate trigger
+	// volume needed).
 	Mesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("Mesh"));
 	Mesh->SetCollisionProfileName(TEXT("PhysicsActor"));
 	Mesh->SetSimulatePhysics(true);
@@ -33,18 +31,6 @@ AALSPickupBase::AALSPickupBase()
 	{
 		Mesh->SetStaticMesh(DefaultMeshFinder.Object);
 	}
-
-	TriggerSphere = CreateDefaultSubobject<USphereComponent>(TEXT("TriggerSphere"));
-	TriggerSphere->InitSphereRadius(75.f);
-	// "OverlapAllDynamic" (a stock engine collision profile) rather than
-	// hand-picking channel responses - a manually-set Overlap response on
-	// just the Pawn channel still resolves as a physical *block* if the
-	// other side's response to this component's own object channel isn't
-	// also non-blocking, which the character's capsule's default "Pawn"
-	// preset is not. This profile is built specifically for trigger/pickup
-	// volumes and avoids that mismatch.
-	TriggerSphere->SetCollisionProfileName(TEXT("OverlapAllDynamic"));
-	TriggerSphere->SetupAttachment(RootComponent);
 
 	LabelText = CreateDefaultSubobject<UTextRenderComponent>(TEXT("LabelText"));
 	LabelText->SetupAttachment(RootComponent);
@@ -58,8 +44,6 @@ AALSPickupBase::AALSPickupBase()
 void AALSPickupBase::BeginPlay()
 {
 	Super::BeginPlay();
-
-	TriggerSphere->OnComponentBeginOverlap.AddDynamic(this, &AALSPickupBase::HandleBeginOverlap);
 
 	if (LabelText)
 	{
@@ -89,32 +73,23 @@ void AALSPickupBase::Tick(float DeltaSeconds)
 	}
 }
 
-void AALSPickupBase::HandleBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult)
+void AALSPickupBase::Interact_Implementation(APawn* Interactor)
 {
-	if (bConsumed)
+	if (bConsumed || !Interactor)
 	{
 		return;
 	}
 
-	APawn* Pawn = Cast<APawn>(OtherActor);
-	if (!Pawn)
-	{
-		return;
-	}
-
-	if (OnPickedUp(Pawn))
+	if (OnPickedUp(Interactor))
 	{
 		bConsumed = true;
-		// Not an immediate Destroy(): a pickup spawned already overlapping a
-		// pawn (e.g. dropped right on top of one, or in a test spawning both
-		// at the same location) fires this overlap synchronously from
-		// within SpawnActor's own initial-overlap resolution, still on the
-		// stack below it - destroying the actor there makes SpawnActor
-		// return nullptr to its own caller instead of the actor it just
-		// created. Disable immediately so it can't be picked up twice or
-		// keep blocking, but defer the actual Destroy() a tick.
-		TriggerSphere->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		SetActorHiddenInGame(true);
+		Mesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		SetLifeSpan(0.01f);
 	}
+}
+
+FText AALSPickupBase::GetInteractionPrompt_Implementation() const
+{
+	return PickupLabel.IsEmpty() ? FText::FromString(TEXT("Pick Up")) : FText::Format(NSLOCTEXT("ALSHost", "PickupPrompt", "Pick Up {0}"), PickupLabel);
 }
