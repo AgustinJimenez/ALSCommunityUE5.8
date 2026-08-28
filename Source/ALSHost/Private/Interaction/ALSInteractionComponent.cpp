@@ -12,14 +12,13 @@
 #include "DrawDebugHelpers.h"
 
 // Same pattern as ALS.Weapon.ShowDebugTrace - purely visual, does not affect
-// hit detection. Defaulted to true for the same reason: the editor gets
-// restarted often during development, and this is the only way to visually
-// confirm the Interact key is actually registering a press at all (as
-// opposed to registering but missing its trace, or not registering at all)
-// without attaching a debugger.
+// hit detection. Off by default now that the door/loot-container/pickup
+// interact flow is confirmed working; flip it back on with
+// `ALS.Interact.ShowDebugTrace 1` if a future "E does nothing" report needs
+// diagnosing again without attaching a debugger.
 static TAutoConsoleVariable<bool> CVarALSInteractShowDebugTrace(
 	TEXT("ALS.Interact.ShowDebugTrace"),
-	true,
+	false,
 	TEXT("Draw the interact trace and show an on-screen message every time the Interact key is pressed, reporting whether it hit anything interactable. Purely visual - does not affect hit detection."),
 	ECVF_Default);
 
