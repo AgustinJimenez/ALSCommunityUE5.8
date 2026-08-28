@@ -37,6 +37,11 @@ protected:
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> AmmoText;
 
+	// Hidden (Collapsed) except while UALSMedkitComponent is actively
+	// applying a medkit - see HandleMedkitApplyStarted/Progress/Ended.
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UProgressBar> MedkitApplyBar;
+
 private:
 	UFUNCTION()
 	void HandleHealthChanged(float NewHealth, float MaxHealth, float Delta, AActor* DamageInstigator);
@@ -50,4 +55,13 @@ private:
 	// component at all) - either one means the displayed numbers are stale.
 	UFUNCTION()
 	void RefreshAmmoText();
+
+	UFUNCTION()
+	void HandleMedkitApplyStarted();
+
+	UFUNCTION()
+	void HandleMedkitApplyProgress(float Progress01);
+
+	UFUNCTION()
+	void HandleMedkitApplyEnded(bool bCompleted);
 };

@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Inventory/ALSPickupBase.h"
+#include "Library/ALSCharacterEnumLibrary.h"
 #include "ALSItemPickup.generated.h"
 
 // Generic inventory-item pickup: adds ItemID/DisplayName/Quantity to
@@ -25,6 +26,16 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ALS|Pickup")
 	int32 MaxStack = 99;
+
+	// Set true for items that should show up as clickable/equippable in the
+	// inventory panel (e.g. a medkit) rather than just being a passive
+	// stack (ammo, crafting materials). Mirrors AALSWeaponPickup's own
+	// bEquippable/EquipOverlayState pair - see UALSInventoryComponent::AddItem.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ALS|Pickup")
+	bool bEquippable = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ALS|Pickup", meta = (EditCondition = "bEquippable"))
+	EALSOverlayState EquipOverlayState = EALSOverlayState::Default;
 
 protected:
 	virtual bool OnPickedUp(APawn* Pawn) override;

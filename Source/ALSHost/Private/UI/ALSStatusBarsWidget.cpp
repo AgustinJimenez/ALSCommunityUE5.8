@@ -6,6 +6,7 @@
 #include "Stats/ALSStaminaComponent.h"
 #include "Weapon/ALSWeaponFireComponent.h"
 #include "Inventory/ALSInventoryComponent.h"
+#include "Combat/ALSMedkitComponent.h"
 
 void UALSStatusBarsWidget::NativeConstruct()
 {
@@ -15,6 +16,18 @@ void UALSStatusBarsWidget::NativeConstruct()
 	if (!Pawn)
 	{
 		return;
+	}
+
+	if (MedkitApplyBar)
+	{
+		MedkitApplyBar->SetVisibility(ESlateVisibility::Collapsed);
+	}
+
+	if (UALSMedkitComponent* Medkit = Pawn->FindComponentByClass<UALSMedkitComponent>())
+	{
+		Medkit->OnMedkitApplyStarted.AddDynamic(this, &UALSStatusBarsWidget::HandleMedkitApplyStarted);
+		Medkit->OnMedkitApplyProgress.AddDynamic(this, &UALSStatusBarsWidget::HandleMedkitApplyProgress);
+		Medkit->OnMedkitApplyEnded.AddDynamic(this, &UALSStatusBarsWidget::HandleMedkitApplyEnded);
 	}
 
 	if (UALSHealthComponent* Health = Pawn->FindComponentByClass<UALSHealthComponent>())
@@ -92,4 +105,29 @@ void UALSStatusBarsWidget::RefreshAmmoText()
 	}
 
 	AmmoText->SetText(FText::FromString(FString::Printf(TEXT("%d / %d"), Weapon->GetCurrentAmmoInMagazine(), Weapon->GetCurrentReserveAmmo())));
+}
+
+void UALSStatusBarsWidget::HandleMedkitApplyStarted()
+{
+	if (MedkitApplyBar)
+	{
+		MedkitApplyBar->SetVisibility(ESlateVisibility::Visible);
+		MedkitApplyBar->SetPercent(0.0f);
+	}
+}
+
+void UALSStatusBarsWidget::HandleMedkitApplyProgress(float Progress01)
+{
+	if (MedkitApplyBar)
+	{
+		MedkitApplyBar->SetPercent(Progress01);
+	}
+}
+
+void UALSStatusBarsWidget::HandleMedkitApplyEnded(bool bCompleted)
+{
+	if (MedkitApplyBar)
+	{
+		MedkitApplyBar->SetVisibility(ESlateVisibility::Collapsed);
+	}
 }

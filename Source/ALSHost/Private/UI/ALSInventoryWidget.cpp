@@ -8,6 +8,7 @@
 #include "UI/ALSDebugMenuRowWidget.h"
 #include "UI/ALSInventoryContextMenuWidget.h"
 #include "Character/ALSCharacter.h"
+#include "Combat/ALSMedkitComponent.h"
 
 void UALSInventoryWidget::NativeConstruct()
 {
@@ -171,6 +172,17 @@ bool UALSInventoryWidget::EquipItem(FName ItemID)
 	{
 		if (Item.ItemID == ItemID && Item.bEquippable)
 		{
+			// The medkit needs its real mesh attached, not whichever
+			// default mesh ALS_CharacterBP's OnUpdateHeldObject switch
+			// shows for the Box overlay state - EquipMedkit() handles both
+			// the overlay state and the mesh together.
+			if (UALSMedkitComponent* Medkit = ALSChar->FindComponentByClass<UALSMedkitComponent>();
+				Medkit && ItemID == Medkit->MedkitItemID)
+			{
+				Medkit->EquipMedkit();
+				return true;
+			}
+
 			ALSChar->SetOverlayState(Item.EquipOverlayState);
 			return true;
 		}

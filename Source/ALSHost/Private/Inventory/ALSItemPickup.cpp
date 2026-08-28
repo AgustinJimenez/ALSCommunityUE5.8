@@ -11,6 +11,6 @@ bool AALSItemPickup::OnPickedUp(APawn* Pawn)
 		return false;
 	}
 
-	const int32 AmountAdded = Inventory->AddItem(ItemID, DisplayName, Quantity, MaxStack);
+	const int32 AmountAdded = Inventory->AddItem(ItemID, DisplayName, Quantity, MaxStack, bEquippable, EquipOverlayState);
 	return AmountAdded > 0;
 }
