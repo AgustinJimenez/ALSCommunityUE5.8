@@ -93,16 +93,17 @@ void UALSInventoryWidget::RefreshItemsList()
 
 		if (UALSDebugMenuRowWidget* Row = CreateWidget<UALSDebugMenuRowWidget>(GetOwningPlayer(), RowWidgetClass))
 		{
-			const FString Suffix = Item.bEquippable ? TEXT("  [right-click]") : FString();
+			const FString Suffix = Item.bEquippable ? TEXT("  [click]") : FString();
 			Row->SetRowLabel(FText::FromString(FString::Printf(TEXT("%s  x%d%s"), *Item.DisplayName.ToString(), Item.Quantity, *Suffix)));
 
-			// Left-click intentionally does nothing beyond the row's own
-			// hover highlight now - equipping moved to the right-click
-			// context menu's "Equip" option (see ShowContextMenu).
+			// Left-click opens the Equip/Inspect context menu; right-click
+			// intentionally does nothing beyond the row's own hover
+			// highlight (swapped from the original right-click-for-menu
+			// layout per user request).
 			if (Item.bEquippable)
 			{
 				const FName ItemID = Item.ItemID;
-				Row->SetOnRightClicked([this, ItemID](const FVector2D&) { ShowContextMenu(ItemID); });
+				Row->SetOnClicked([this, ItemID]() { ShowContextMenu(ItemID); });
 			}
 
 			ItemsList->AddChildToVerticalBox(Row);
