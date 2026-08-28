@@ -114,12 +114,26 @@ UALSWeaponFireComponent::UALSWeaponFireComponent()
 	// M9 (PistolOneHanded's mesh) and Bow both now have a real "Muzzle"
 	// socket (added via add_socket, estimated from their ADS socket/mesh
 	// bounds - not visually verified yet, same caveat the Rifle's Muzzle
-	// socket started with). No ReloadAnimation for either yet - Reload()
-	// still runs the timer/ammo logic correctly with nothing to play, same
-	// as any weapon without one.
+	// socket started with). Bow has no ReloadAnimation - Reload() still
+	// runs the timer/ammo logic correctly with nothing to play, same as
+	// any weapon without one.
 	FALSWeaponAmmoStats PistolStats;
 	PistolStats.MagazineSize = 12;
 	PistolStats.ReloadSeconds = 1.6f;
+
+	// Migrated+retargeted from ResidentHorrorV1 the same way as
+	// AS_Rifle_Reload (see that finder above) - AS_MM_Pistol_Reload there.
+	// No ReloadHeldObjectLocationOffset/RotationOffset tuned for this one
+	// yet (defaults to zero, i.e. untouched) - unlike the Rifle's, which
+	// went through a dedicated live-tuning pass (see
+	// AGENT_TASKS/0001_rifle_reload_gun_offset.md); this one hasn't been
+	// visually checked against the M9's actual grip geometry yet.
+	static ConstructorHelpers::FObjectFinder<UAnimSequenceBase> PistolReloadAnimFinder(
+		TEXT("/Game/ALSHost/Animations/AS_Pistol_Reload.AS_Pistol_Reload"));
+	if (PistolReloadAnimFinder.Succeeded())
+	{
+		PistolStats.ReloadAnimation = PistolReloadAnimFinder.Object;
+	}
 	PistolStats.AmmoItemID = TEXT("Ammo_Pistol");
 	PistolStats.bFullyAutomatic = false;
 

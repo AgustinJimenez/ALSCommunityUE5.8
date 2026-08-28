@@ -264,12 +264,13 @@ TEST_CLASS(ALSWeaponAmmoTests, "ALSHost.Weapon")
 			});
 	}
 
-	// Locks in the sound/VFX asset references migrated from ResidentHorrorV1
-	// (see AGENTS.md) - not a playback test (nullrhi/headless has no audio
-	// device to verify against), just a regression guard against these
-	// fields silently going back to unset. Pure config inspection, set in
-	// the constructor - FActorTestSpawner (no BeginPlay/live world needed)
-	// is enough, same reasoning as ALSWeaponSpreadTests.cpp.
+	// Locks in the sound/VFX/reload-animation asset references migrated
+	// from ResidentHorrorV1 (see AGENTS.md) - not a playback test
+	// (nullrhi/headless has no audio device to verify against), just a
+	// regression guard against these fields silently going back to unset.
+	// Pure config inspection, set in the constructor - FActorTestSpawner
+	// (no BeginPlay/live world needed) is enough, same reasoning as
+	// ALSWeaponSpreadTests.cpp.
 	TEST_METHOD(RifleAndPistol_HaveSoundAndMuzzleFlashConfigured)
 	{
 		FActorTestSpawner LocalSpawner;
@@ -287,6 +288,7 @@ TEST_CLASS(ALSWeaponAmmoTests, "ALSHost.Weapon")
 		ASSERT_THAT(IsNotNull(RifleStats.EmptyClickSound));
 		ASSERT_THAT(IsNotNull(RifleStats.ReloadSound));
 		ASSERT_THAT(IsNotNull(RifleStats.MuzzleFlashVFX));
+		ASSERT_THAT(IsNotNull(RifleStats.ReloadAnimation));
 
 		const FALSWeaponAmmoStats& PistolStats = LocalWeapon->GetAmmoStatsForOverlayState(EALSOverlayState::PistolOneHanded, bFound);
 		ASSERT_THAT(IsTrue(bFound));
@@ -294,6 +296,7 @@ TEST_CLASS(ALSWeaponAmmoTests, "ALSHost.Weapon")
 		ASSERT_THAT(IsNotNull(PistolStats.EmptyClickSound));
 		ASSERT_THAT(IsNotNull(PistolStats.ReloadSound));
 		ASSERT_THAT(IsNotNull(PistolStats.MuzzleFlashVFX));
+		ASSERT_THAT(IsNotNull(PistolStats.ReloadAnimation));
 
 		// Torch has no configured ammo stats at all - bFound should say so
 		// rather than returning stale/default data silently.
