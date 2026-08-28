@@ -3,6 +3,7 @@
 #if WITH_AUTOMATION_TESTS
 
 #include "Components/MapTestSpawner.h"
+#include "Components/ActorTestSpawner.h"
 #include "Inventory/ALSItemPickup.h"
 #include "Inventory/ALSHealthPickup.h"
 #include "Inventory/ALSWeaponPickup.h"
@@ -222,6 +223,22 @@ TEST_CLASS(ALSPickupTests, "ALSHost.Inventory")
 				ASSERT_THAT(IsTrue(Widget->EquipItem(TEXT("Weapon_Pistol"))));
 				ASSERT_THAT(IsTrue(Character->GetOverlayState() == EALSOverlayState::PistolOneHanded));
 			});
+	}
+};
+
+// Pure construction-time check, no world/BeginPlay needed - guards against
+// AALSWeaponPickup silently reverting to the inherited Cube/Sphere
+// placeholder (which every real weapon mesh in this project, being a
+// SkeletalMesh, can't be assigned to at all).
+TEST_CLASS(ALSWeaponPickupMeshTests, "ALSHost.Inventory")
+{
+	FActorTestSpawner Spawner;
+
+	TEST_METHOD(WeaponPickup_HasSkeletalMeshComponent_AndHidesInheritedStaticMesh)
+	{
+		AALSWeaponPickup& Pickup = Spawner.SpawnActor<AALSWeaponPickup>();
+		ASSERT_THAT(IsNotNull(Pickup.WeaponMesh));
+		ASSERT_THAT(IsFalse(Pickup.GetMesh() ? Pickup.GetMesh()->IsVisible() : false));
 	}
 };
 

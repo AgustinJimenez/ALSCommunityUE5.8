@@ -29,6 +29,8 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ALS|Pickup")
 	TObjectPtr<UTextRenderComponent> LabelText;
 
+	FORCEINLINE UStaticMeshComponent* GetMesh() const { return Mesh; }
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void Tick(float DeltaSeconds) override;

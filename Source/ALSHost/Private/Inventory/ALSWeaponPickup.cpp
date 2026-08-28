@@ -3,17 +3,20 @@
 #include "Inventory/ALSInventoryComponent.h"
 #include "Character/ALSCharacter.h"
 #include "Components/StaticMeshComponent.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "UObject/ConstructorHelpers.h"
 
 AALSWeaponPickup::AALSWeaponPickup()
 {
-	// Distinct shape from the Sphere AALSPickupBase defaults to (ammo/health
-	// pickups), so the two are visually distinguishable at a glance in PIE.
-	static ConstructorHelpers::FObjectFinder<UStaticMesh> CubeMeshFinder(TEXT("/Engine/BasicShapes/Cube.Cube"));
-	if (CubeMeshFinder.Succeeded())
-	{
-		Mesh->SetStaticMesh(CubeMeshFinder.Object);
-	}
+	// The inherited static Mesh is a placeholder Cube/Sphere and can't
+	// display a real (skeletal) weapon mesh - hide it rather than remove it,
+	// so AALSPickupBase's shared logic keeps working unmodified.
+	Mesh->SetHiddenInGame(true);
+	Mesh->SetVisibility(false);
+
+	WeaponMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("WeaponMesh"));
+	WeaponMesh->SetupAttachment(RootComponent);
+	WeaponMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 }
 
 bool AALSWeaponPickup::OnPickedUp(APawn* Pawn)

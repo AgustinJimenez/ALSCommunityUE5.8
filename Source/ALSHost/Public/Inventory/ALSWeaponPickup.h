@@ -5,6 +5,8 @@
 #include "Library/ALSCharacterEnumLibrary.h"
 #include "ALSWeaponPickup.generated.h"
 
+class USkeletalMeshComponent;
+
 // Picking this up equips the weapon directly (SetOverlayState) rather than
 // adding a slot to a multi-weapon inventory - UALSWeaponFireComponent only
 // has one active weapon (whatever the character's current overlay state is)
@@ -48,6 +50,17 @@ public:
 	// 0 = grant no bonus reserve ammo, just equip the weapon.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ALS|Pickup")
 	int32 BonusAmmoQuantity = 90;
+
+	// Every real weapon mesh in this project (M4A1, M9, Bow, and the
+	// migrated Lyra SK_Rifle/SKM_Shotgun/SK_Pistol) is a SkeletalMesh with
+	// its own tiny per-weapon skeleton, not a StaticMesh - see AGENTS.md.
+	// AALSPickupBase's inherited Mesh (StaticMeshComponent, a placeholder
+	// Cube/Sphere) can't display one, so weapon pickups get their own
+	// skeletal slot instead; the inherited Mesh is hidden in the
+	// constructor. Set per-instance in the level to the actual weapon mesh
+	// matching OverlayStateToEquip.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ALS|Pickup")
+	TObjectPtr<USkeletalMeshComponent> WeaponMesh;
 
 protected:
 	virtual bool OnPickedUp(APawn* Pawn) override;
