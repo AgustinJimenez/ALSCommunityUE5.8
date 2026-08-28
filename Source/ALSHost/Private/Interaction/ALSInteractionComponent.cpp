@@ -8,6 +8,20 @@
 #include "InputAction.h"
 #include "InputMappingContext.h"
 #include "Engine/World.h"
+#include "Engine/Engine.h"
+#include "DrawDebugHelpers.h"
+
+// Same pattern as ALS.Weapon.ShowDebugTrace - purely visual, does not affect
+// hit detection. Defaulted to true for the same reason: the editor gets
+// restarted often during development, and this is the only way to visually
+// confirm the Interact key is actually registering a press at all (as
+// opposed to registering but missing its trace, or not registering at all)
+// without attaching a debugger.
+static TAutoConsoleVariable<bool> CVarALSInteractShowDebugTrace(
+	TEXT("ALS.Interact.ShowDebugTrace"),
+	true,
+	TEXT("Draw the interact trace and show an on-screen message every time the Interact key is pressed, reporting whether it hit anything interactable. Purely visual - does not affect hit detection."),
+	ECVF_Default);
 
 UALSInteractionComponent::UALSInteractionComponent()
 {
@@ -109,13 +123,35 @@ bool UALSInteractionComponent::TryInteract()
 
 	FHitResult Hit;
 	const bool bHit = GetWorld()->LineTraceSingleByChannel(Hit, CameraLocation, TraceEnd, TraceChannel, QueryParams);
+
 	if (!bHit || !Hit.GetActor())
 	{
+		if (CVarALSInteractShowDebugTrace.GetValueOnGameThread())
+		{
+			DrawDebugLine(GetWorld(), CameraLocation, TraceEnd, FColor::Yellow, false, 1.0f, 0, 0.5f);
+			if (GEngine)
+			{
+				GEngine->AddOnScreenDebugMessage(-1, 1.0f, FColor::Yellow, TEXT("Interact: nothing in range/aim"));
+			}
+		}
 		return false;
 	}
 
 	AActor* HitActor = Hit.GetActor();
-	if (!HitActor->GetClass()->ImplementsInterface(UALSInteractable::StaticClass()))
+	const bool bIsInteractable = HitActor->GetClass()->ImplementsInterface(UALSInteractable::StaticClass());
+
+	if (CVarALSInteractShowDebugTrace.GetValueOnGameThread())
+	{
+		DrawDebugLine(GetWorld(), CameraLocation, Hit.ImpactPoint, bIsInteractable ? FColor::Green : FColor::Red, false, 1.0f, 0, 0.5f);
+		DrawDebugPoint(GetWorld(), Hit.ImpactPoint, 8.0f, bIsInteractable ? FColor::Green : FColor::Red, false, 1.0f);
+		if (GEngine)
+		{
+			GEngine->AddOnScreenDebugMessage(-1, 1.0f, bIsInteractable ? FColor::Green : FColor::Red,
+				FString::Printf(TEXT("Interact: hit %s (%s)"), *HitActor->GetName(), bIsInteractable ? TEXT("interactable") : TEXT("not interactable")));
+		}
+	}
+
+	if (!bIsInteractable)
 	{
 		return false;
 	}

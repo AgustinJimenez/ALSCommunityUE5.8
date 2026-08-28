@@ -9,6 +9,7 @@
 #include "Interaction/ALSInteractionComponent.h"
 #include "Weapon/ALSMeleeComponent.h"
 #include "Inventory/ALSInventoryComponent.h"
+#include "Inventory/ALSItemPickup.h"
 #include "Combat/ALSHealthComponent.h"
 #include "Character/ALSCharacter.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -103,11 +104,17 @@ TEST_CLASS(ALSInteractionRuntimeTests, "ALSHost.Interaction")
 		UClass* CharClass = LoadClass<AALSCharacter>(nullptr, TEXT("/ALSV4_CPP/AdvancedLocomotionV4/Blueprints/CharacterLogic/ALS_CharacterBP.ALS_CharacterBP_C"));
 		ASSERT_THAT(IsNotNull(CharClass));
 		Character = &Spawner->SpawnActorAt<AALSCharacter>(Location, FRotator::ZeroRotator, FActorSpawnParameters(), CharClass);
-		Character->GetCharacterMovement()->DisableMovement();
 
 		APlayerController* PC = UGameplayStatics::GetPlayerController(&Spawner->GetWorld(), 0);
 		ASSERT_THAT(IsNotNull(PC));
 		PC->Possess(Character);
+
+		// Possessing resets the movement mode (confirmed - calling
+		// DisableMovement() before Possess() here left the character
+		// falling indefinitely for the rest of the test despite it, since
+		// the temp level has no floor), so disable movement AFTER
+		// possessing, not before.
+		Character->GetCharacterMovement()->DisableMovement();
 	}
 
 	TEST_METHOD(Door_Interact_SwingsTowardTargetYaw_OverTime)
@@ -203,6 +210,68 @@ TEST_CLASS(ALSInteractionRuntimeTests, "ALSHost.Interaction")
 				ASSERT_THAT(IsTrue(Melee->TryMeleeAttack()));
 				const float ExpectedDamage = Melee->FistDamage + Melee->KnifeDamageBonus;
 				ASSERT_THAT(IsNear(TargetHealth->GetCurrentHealth(), HealthBefore - ExpectedDamage, 0.5f));
+			});
+	}
+
+	// Same direct-TryInteract() pattern as InteractionComponent_TryInteract_HitsDoorInFront_OpensIt
+	// above (not real Enhanced Input injection - FInputTestActions' async,
+	// tick-delayed injection combined with this floorless temp map's
+	// continuous-fall-despite-DisableMovement quirk made a real-input
+	// version of this test unreliably flaky here, for reasons specific to
+	// the test harness, not the production Interact system itself -
+	// confirmed separately via a fixed-point LineTraceSingleByChannel call
+	// that this pickup's collision correctly blocks the Visibility channel
+	// the interact trace uses. Real Enhanced Input injection through this
+	// exact input-binding path is still covered by
+	// PressingToggleAction_ThroughRealInput_TogglesInventoryWidget
+	// (ALSInventoryUITests.cpp); what this test adds is the pickup-specific
+	// interact wiring.
+	TEST_METHOD(InteractionComponent_TryInteract_HitsItemPickupInFront_PicksItUp)
+	{
+		TestCommandBuilder
+			.StartWhen([this]() { return Spawner.IsValid(); })
+			.Then([this]() {
+				SpawnCharacterAndPossess(FVector::ZeroVector);
+
+				Interaction = NewObject<UALSInteractionComponent>(Character);
+				Interaction->RegisterComponent();
+
+				AALSItemPickup& ItemPickup = Spawner->SpawnActorAt<AALSItemPickup>(FVector(150.f, 0.f, 0.f), FRotator::ZeroRotator);
+				ItemPickup.ItemID = TEXT("TestItem");
+				ItemPickup.DisplayName = FText::FromString(TEXT("Test Item"));
+				ItemPickup.Quantity = 1;
+				// Pickups simulate physics now (see AALSPickupBase), and this
+				// temp level has no floor - freeze it in place so it doesn't
+				// fall out of the trace's path before the interact check runs.
+				ItemPickup.GetMesh()->SetSimulatePhysics(false);
+			})
+			.WaitDelay(FTimespan::FromSeconds(0.2))
+			.Then([this]() {
+				// A ground-resting item sits below a dead-level (Pitch=0)
+				// trace from a raised third-person camera - a real player
+				// has to actually look down at it, same as any raycast-based
+				// interact system. Aim the camera at the item's real location
+				// to simulate that, rather than relying on default control
+				// rotation the way the (much taller) Door test can.
+				APlayerController* PC = UGameplayStatics::GetPlayerController(&Spawner->GetWorld(), 0);
+				FVector CamLoc;
+				FRotator CamRot;
+				PC->GetPlayerViewPoint(CamLoc, CamRot);
+				const AALSItemPickup* ItemPickup = Cast<AALSItemPickup>(UGameplayStatics::GetActorOfClass(&Spawner->GetWorld(), AALSItemPickup::StaticClass()));
+				ASSERT_THAT(IsNotNull(ItemPickup));
+				PC->SetControlRotation((ItemPickup->GetActorLocation() - CamLoc).Rotation());
+			})
+			// ALS's third-person camera interpolates toward the control
+			// rotation rather than snapping instantly - GetPlayerViewPoint
+			// called in the same tick as SetControlRotation still reports
+			// the old, pre-turn camera angle. Give it a moment to catch up.
+			.WaitDelay(FTimespan::FromSeconds(0.3))
+			.Then([this]() {
+				ASSERT_THAT(IsTrue(Interaction->TryInteract()));
+
+				UALSInventoryComponent* Inventory = Character->FindComponentByClass<UALSInventoryComponent>();
+				ASSERT_THAT(IsNotNull(Inventory));
+				ASSERT_THAT(IsTrue(Inventory->HasItem(TEXT("TestItem"), 1)));
 			});
 	}
 
