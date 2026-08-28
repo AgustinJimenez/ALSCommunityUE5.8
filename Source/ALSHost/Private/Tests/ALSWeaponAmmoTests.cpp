@@ -3,6 +3,7 @@
 #if WITH_AUTOMATION_TESTS
 
 #include "Components/MapTestSpawner.h"
+#include "Components/ActorTestSpawner.h"
 #include "Weapon/ALSWeaponFireComponent.h"
 #include "Inventory/ALSInventoryComponent.h"
 #include "Character/ALSCharacter.h"
@@ -261,6 +262,43 @@ TEST_CLASS(ALSWeaponAmmoTests, "ALSHost.Weapon")
 				Inventory->AddItem(TEXT("Ammo_Rifle"), FText::FromString(TEXT("Rifle Ammo")), 60, 999);
 				ASSERT_THAT(IsTrue(Weapon->GetCurrentReserveAmmo() == 60));
 			});
+	}
+
+	// Locks in the sound/VFX asset references migrated from ResidentHorrorV1
+	// (see AGENTS.md) - not a playback test (nullrhi/headless has no audio
+	// device to verify against), just a regression guard against these
+	// fields silently going back to unset. Pure config inspection, set in
+	// the constructor - FActorTestSpawner (no BeginPlay/live world needed)
+	// is enough, same reasoning as ALSWeaponSpreadTests.cpp.
+	TEST_METHOD(RifleAndPistol_HaveSoundAndMuzzleFlashConfigured)
+	{
+		FActorTestSpawner LocalSpawner;
+		UClass* CharClass = LoadClass<AALSCharacter>(nullptr, TEXT("/ALSV4_CPP/AdvancedLocomotionV4/Blueprints/CharacterLogic/ALS_CharacterBP.ALS_CharacterBP_C"));
+		ASSERT_THAT(IsNotNull(CharClass));
+
+		AALSCharacter& LocalCharacter = LocalSpawner.SpawnActor<AALSCharacter>(FActorSpawnParameters(), CharClass);
+		UALSWeaponFireComponent* LocalWeapon = LocalCharacter.FindComponentByClass<UALSWeaponFireComponent>();
+		ASSERT_THAT(IsNotNull(LocalWeapon));
+
+		bool bFound = false;
+		const FALSWeaponAmmoStats& RifleStats = LocalWeapon->GetAmmoStatsForOverlayState(EALSOverlayState::Rifle, bFound);
+		ASSERT_THAT(IsTrue(bFound));
+		ASSERT_THAT(IsNotNull(RifleStats.FireSound));
+		ASSERT_THAT(IsNotNull(RifleStats.EmptyClickSound));
+		ASSERT_THAT(IsNotNull(RifleStats.ReloadSound));
+		ASSERT_THAT(IsNotNull(RifleStats.MuzzleFlashVFX));
+
+		const FALSWeaponAmmoStats& PistolStats = LocalWeapon->GetAmmoStatsForOverlayState(EALSOverlayState::PistolOneHanded, bFound);
+		ASSERT_THAT(IsTrue(bFound));
+		ASSERT_THAT(IsNotNull(PistolStats.FireSound));
+		ASSERT_THAT(IsNotNull(PistolStats.EmptyClickSound));
+		ASSERT_THAT(IsNotNull(PistolStats.ReloadSound));
+		ASSERT_THAT(IsNotNull(PistolStats.MuzzleFlashVFX));
+
+		// Torch has no configured ammo stats at all - bFound should say so
+		// rather than returning stale/default data silently.
+		LocalWeapon->GetAmmoStatsForOverlayState(EALSOverlayState::Torch, bFound);
+		ASSERT_THAT(IsFalse(bFound));
 	}
 };
 

@@ -27,6 +27,9 @@
 #include "UI/ALSDebugPropMenuWidget.h"
 #include "Camera/ALSHostPlayerCameraManager.h"
 #include "Weapon/ALSProjectile.h"
+#include "Sound/SoundBase.h"
+#include "Particles/ParticleSystem.h"
+#include "Particles/ParticleSystemComponent.h"
 #include "GameFramework/ProjectileMovementComponent.h"
 #include "InputCoreTypes.h"
 #include "Inventory/ALSInventoryComponent.h"
@@ -68,6 +71,44 @@ UALSWeaponFireComponent::UALSWeaponFireComponent()
 		RifleStats.ReloadAnimation = RifleReloadAnimFinder.Object;
 	}
 
+	// Sound/VFX migrated from ResidentHorrorV1 via IAssetTools::MigratePackages
+	// (see AGENTS.md - nothing gunfire-shaped exists anywhere in this
+	// project or ALS-Community itself). No dedicated rifle-fire Cue existed
+	// there either, only a rifle *reload*/fragment - CUE_ShotgunA_Fire_Cue
+	// is a full, punchy gunshot reused as the Rifle's fire sound instead of
+	// a thin "_End_" tail fragment; genuinely thematically Rifle:
+	// CUE_Shotgun_Reload_Cue for reload, PS_AssaultRifle_MuzzleFlash
+	// (legacy Cascade, the only muzzle-flash particle system reachable this
+	// session - see MuzzleFlashVFX's own comment on why it's UParticleSystem
+	// not Niagara) for the muzzle flash.
+	static ConstructorHelpers::FObjectFinder<USoundBase> RifleFireSoundFinder(
+		TEXT("/Game/ResidentHorrorV1/Audio/Cue/CUE_ShotgunA_Fire_Cue.CUE_ShotgunA_Fire_Cue"));
+	if (RifleFireSoundFinder.Succeeded())
+	{
+		RifleStats.FireSound = RifleFireSoundFinder.Object;
+	}
+
+	static ConstructorHelpers::FObjectFinder<USoundBase> RifleReloadSoundFinder(
+		TEXT("/Game/ResidentHorrorV1/Audio/Cue/CUE_Shotgun_Reload_Cue.CUE_Shotgun_Reload_Cue"));
+	if (RifleReloadSoundFinder.Succeeded())
+	{
+		RifleStats.ReloadSound = RifleReloadSoundFinder.Object;
+	}
+
+	static ConstructorHelpers::FObjectFinder<UParticleSystem> RifleMuzzleFlashFinder(
+		TEXT("/Game/ResidentHorrorV1/ParticleEffects/PS_AssaultRifle_MuzzleFlash.PS_AssaultRifle_MuzzleFlash"));
+	if (RifleMuzzleFlashFinder.Succeeded())
+	{
+		RifleStats.MuzzleFlashVFX = RifleMuzzleFlashFinder.Object;
+	}
+
+	static ConstructorHelpers::FObjectFinder<USoundBase> SharedEmptyClickFinder(
+		TEXT("/Game/ResidentHorrorV1/Audio/WavFiles/WAV_click.WAV_click"));
+	if (SharedEmptyClickFinder.Succeeded())
+	{
+		RifleStats.EmptyClickSound = SharedEmptyClickFinder.Object;
+	}
+
 	AmmoStatsByOverlayState.Add(EALSOverlayState::Rifle, RifleStats);
 
 	// M9 (PistolOneHanded's mesh) and Bow both now have a real "Muzzle"
@@ -81,6 +122,29 @@ UALSWeaponFireComponent::UALSWeaponFireComponent()
 	PistolStats.ReloadSeconds = 1.6f;
 	PistolStats.AmmoItemID = TEXT("Ammo_Pistol");
 	PistolStats.bFullyAutomatic = false;
+
+	// ResidentHorrorV1 has a genuinely complete pistol set - no substitution
+	// needed here, unlike the Rifle.
+	static ConstructorHelpers::FObjectFinder<USoundBase> PistolFireSoundFinder(
+		TEXT("/Game/ResidentHorrorV1/Audio/Cue/CUE_Pistol_Fire_Cue.CUE_Pistol_Fire_Cue"));
+	if (PistolFireSoundFinder.Succeeded())
+	{
+		PistolStats.FireSound = PistolFireSoundFinder.Object;
+	}
+
+	static ConstructorHelpers::FObjectFinder<USoundBase> PistolReloadSoundFinder(
+		TEXT("/Game/ResidentHorrorV1/Audio/Cue/CUE_Pistol_ReloadInsert_Cue.CUE_Pistol_ReloadInsert_Cue"));
+	if (PistolReloadSoundFinder.Succeeded())
+	{
+		PistolStats.ReloadSound = PistolReloadSoundFinder.Object;
+	}
+
+	// No dedicated pistol muzzle flash was found anywhere reachable this
+	// session - reusing the same rifle one as a placeholder rather than
+	// leaving the Pistol with no flash at all.
+	PistolStats.MuzzleFlashVFX = RifleStats.MuzzleFlashVFX;
+	PistolStats.EmptyClickSound = RifleStats.EmptyClickSound;
+
 	AmmoStatsByOverlayState.Add(EALSOverlayState::PistolOneHanded, PistolStats);
 
 	// One "arrow" per shot - nocking the next one is the reload. Also
@@ -92,6 +156,13 @@ UALSWeaponFireComponent::UALSWeaponFireComponent()
 	BowStats.AmmoItemID = TEXT("Ammo_Bow");
 	BowStats.bFullyAutomatic = false;
 	AmmoStatsByOverlayState.Add(EALSOverlayState::Bow, BowStats);
+
+	static ConstructorHelpers::FObjectFinder<USoundBase> SharedImpactSoundFinder(
+		TEXT("/Game/ResidentHorrorV1/Audio/WavFiles/WAV_Impact_pitch.WAV_Impact_pitch"));
+	if (SharedImpactSoundFinder.Succeeded())
+	{
+		ImpactSound = SharedImpactSoundFinder.Object;
+	}
 
 	ProjectileClass = AALSProjectile::StaticClass();
 }
@@ -712,6 +783,11 @@ void UALSWeaponFireComponent::Reload()
 	bIsReloading = true;
 	OnAmmoChanged.Broadcast();
 
+	if (Stats->ReloadSound)
+	{
+		UGameplayStatics::PlaySoundAtLocation(this, Stats->ReloadSound, ALSChar->GetActorLocation());
+	}
+
 	if (ALSChar && ALSChar->HeldObjectRoot)
 	{
 		SavedHeldObjectRelativeLocation = ALSChar->HeldObjectRoot->GetRelativeLocation();
@@ -1105,6 +1181,32 @@ int32 UALSWeaponFireComponent::GetCurrentReserveAmmo() const
 	return Inventory ? Inventory->GetItemQuantity(Stats->AmmoItemID) : 0;
 }
 
+const FALSWeaponAmmoStats& UALSWeaponFireComponent::GetAmmoStatsForOverlayState(EALSOverlayState State, bool& bFound) const
+{
+	static const FALSWeaponAmmoStats DefaultStats;
+	if (const FALSWeaponAmmoStats* Found = AmmoStatsByOverlayState.Find(State))
+	{
+		bFound = true;
+		return *Found;
+	}
+
+	bFound = false;
+	return DefaultStats;
+}
+
+void UALSWeaponFireComponent::PlayImpactEffects(FVector Location) const
+{
+	if (ImpactSound)
+	{
+		UGameplayStatics::PlaySoundAtLocation(this, ImpactSound, Location);
+	}
+
+	if (ImpactVFX)
+	{
+		UGameplayStatics::SpawnEmitterAtLocation(GetWorld(), ImpactVFX, Location);
+	}
+}
+
 void UALSWeaponFireComponent::Fire()
 {
 	AALSCharacter* ALSChar = Cast<AALSCharacter>(GetOwner());
@@ -1134,9 +1236,15 @@ void UALSWeaponFireComponent::Fire()
 		return;
 	}
 
+	const FALSWeaponAmmoStats* Stats = AmmoStatsByOverlayState.Find(ALSChar->GetOverlayState());
+
 	if (CurrentAmmoInMagazine == 0)
 	{
 		UE_LOG(LogTemp, Log, TEXT("ALSWeaponFireComponent::Fire - empty, click"));
+		if (Stats && Stats->EmptyClickSound)
+		{
+			UGameplayStatics::PlaySoundAtLocation(this, Stats->EmptyClickSound, WeaponMesh->GetComponentLocation());
+		}
 		StopFiring();
 		return;
 	}
@@ -1150,6 +1258,23 @@ void UALSWeaponFireComponent::Fire()
 	{
 		UE_LOG(LogTemp, Warning, TEXT("ALSWeaponFireComponent::Fire - held weapon has no '%s' socket, falling back to mesh origin"), *MuzzleSocketName.ToString());
 		MuzzleLocation = WeaponMesh->GetComponentLocation();
+	}
+
+	if (Stats && Stats->FireSound)
+	{
+		UGameplayStatics::PlaySoundAtLocation(this, Stats->FireSound, MuzzleLocation);
+	}
+
+	if (Stats && Stats->MuzzleFlashVFX)
+	{
+		if (WeaponMesh->DoesSocketExist(MuzzleSocketName))
+		{
+			UGameplayStatics::SpawnEmitterAttached(Stats->MuzzleFlashVFX, WeaponMesh, MuzzleSocketName);
+		}
+		else
+		{
+			UGameplayStatics::SpawnEmitterAtLocation(GetWorld(), Stats->MuzzleFlashVFX, MuzzleLocation);
+		}
 	}
 
 	// Aim toward where the camera is actually looking, not the muzzle
@@ -1226,6 +1351,8 @@ void UALSWeaponFireComponent::Fire()
 				const float FinalDamage = ComputeDamageForHit(Hit.BoneName, DistanceFromMuzzle);
 				UGameplayStatics::ApplyPointDamage(HitActor, FinalDamage, FireDirection, Hit, PC, ALSChar, DamageTypeClass);
 			}
+
+			PlayImpactEffects(Hit.ImpactPoint);
 		}
 		else
 		{

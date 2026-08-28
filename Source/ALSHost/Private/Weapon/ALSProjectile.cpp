@@ -84,6 +84,7 @@ void AALSProjectile::HandleHit(UPrimitiveComponent* HitComponent, AActor* OtherA
 		const float DistanceTraveled = FVector::Dist(SpawnLocation, Hit.ImpactPoint);
 		const float FinalDamage = SourceWeapon->ComputeDamageForHit(Hit.BoneName, DistanceTraveled);
 		UGameplayStatics::ApplyPointDamage(OtherActor, FinalDamage, GetVelocity().GetSafeNormal(), Hit, InstigatorController, DamageCauser, DamageTypeClass);
+		SourceWeapon->PlayImpactEffects(Hit.ImpactPoint);
 	}
 
 	Destroy();

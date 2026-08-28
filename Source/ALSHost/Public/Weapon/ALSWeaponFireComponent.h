@@ -11,6 +11,8 @@ class UInputMappingContext;
 class UAnimSequenceBase;
 class UAnimMontage;
 class UUserWidget;
+class USoundBase;
+class UParticleSystem;
 
 // Per-weapon-type ammo capacity/reload time, keyed by the character's
 // EALSOverlayState (the same enum ALS_CharacterBP's OnUpdateHeldObject
@@ -67,6 +69,30 @@ struct FALSWeaponAmmoStats
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	FRotator ReloadHeldObjectRotationOffset = FRotator::ZeroRotator;
+
+	// Played once per shot at the muzzle location. Unset = silent (no
+	// gunfire audio exists anywhere in this project or its dependencies as
+	// of this writing - see AGENTS.md).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ALS|Weapon|Effects")
+	TObjectPtr<USoundBase> FireSound;
+
+	// Played once when Fire() is pressed with an empty magazine, instead of
+	// FireSound.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ALS|Weapon|Effects")
+	TObjectPtr<USoundBase> EmptyClickSound;
+
+	// Played once when Reload() actually starts (not on FinishReload) - one
+	// sound covering the whole reload, not separate eject/insert layers.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ALS|Weapon|Effects")
+	TObjectPtr<USoundBase> ReloadSound;
+
+	// Spawned (attached to the weapon mesh, at the Muzzle socket) once per
+	// shot. Legacy Cascade UParticleSystem rather than Niagara - the only
+	// muzzle-flash asset actually reachable this session was a Cascade one
+	// (see AGENTS.md); nothing here stops swapping in a Niagara-based one
+	// later, that would just need this field's type changed too.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ALS|Weapon|Effects")
+	TObjectPtr<UParticleSystem> MuzzleFlashVFX;
 };
 
 // Broadcast whenever CurrentAmmoInMagazine, IsReloading, or the currently
@@ -105,6 +131,14 @@ public:
 	// (unlimited-ammo props).
 	UFUNCTION(BlueprintPure, Category = "ALS|Weapon|Ammo")
 	int32 GetCurrentReserveAmmo() const;
+
+	// Read-only lookup into AmmoStatsByOverlayState - public (the map itself
+	// stays protected) so tests and other code can inspect a weapon's
+	// configured sound/VFX/reload settings without needing a live character
+	// to equip it first. Returns nullptr for an unconfigured overlay state
+	// (unlimited-ammo props).
+	UFUNCTION(BlueprintPure, Category = "ALS|Weapon|Ammo")
+	const FALSWeaponAmmoStats& GetAmmoStatsForOverlayState(EALSOverlayState State, bool& bFound) const;
 
 	// Fire once from the currently held weapon's muzzle socket. Safe to call
 	// directly (e.g. from Blueprint) even without the input binding.
@@ -346,6 +380,24 @@ public:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "ALS|Weapon|Damage")
 	TSubclassOf<class UDamageType> DamageTypeClass;
+
+	// Played/spawned at the hit location on every landed shot, hitscan or
+	// projectile alike (both call PlayImpactEffects - see AALSProjectile::
+	// HandleHit and the hitscan branch of Fire()). Shared across every
+	// weapon rather than per-overlay-state like FireSound/MuzzleFlashVFX -
+	// an impact sounds/looks roughly the same regardless of what fired it.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "ALS|Weapon|Effects")
+	TObjectPtr<USoundBase> ImpactSound;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "ALS|Weapon|Effects")
+	TObjectPtr<UParticleSystem> ImpactVFX;
+
+	// Plays ImpactSound/spawns ImpactVFX at Location if set (no-op for
+	// whichever is unassigned). Public so AALSProjectile::HandleHit can
+	// call it too - the projectile path is the actual default (see
+	// bUseProjectilePhysics), not just the hitscan fallback.
+	UFUNCTION(BlueprintCallable, Category = "ALS|Weapon|Effects")
+	void PlayImpactEffects(FVector Location) const;
 
 	// Damage is full strength up to this distance, then falls off linearly
 	// down to MinDamageMultiplier at MaxRange - real ballistics lose
