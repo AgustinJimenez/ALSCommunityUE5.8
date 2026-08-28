@@ -664,6 +664,8 @@ void UALSWeaponFireComponent::SyncAmmoForCurrentWeapon(const AALSBaseCharacter* 
 			PendingReloadAmount = 0;
 		}
 	}
+
+	OnAmmoChanged.Broadcast();
 }
 
 void UALSWeaponFireComponent::Reload()
@@ -708,6 +710,7 @@ void UALSWeaponFireComponent::Reload()
 	StopFiring();
 
 	bIsReloading = true;
+	OnAmmoChanged.Broadcast();
 
 	if (ALSChar && ALSChar->HeldObjectRoot)
 	{
@@ -768,6 +771,7 @@ void UALSWeaponFireComponent::FinishReload()
 	bHeldObjectTransformSaved = false;
 
 	UE_LOG(LogTemp, Log, TEXT("ALSWeaponFireComponent: reload complete, %d rounds"), CurrentAmmoInMagazine);
+	OnAmmoChanged.Broadcast();
 }
 
 void UALSWeaponFireComponent::DebugStartReloadOffsetTuning()
@@ -1076,6 +1080,31 @@ float UALSWeaponFireComponent::ComputeCurrentSpreadDegrees(const AALSBaseCharact
 	return SpreadDegrees;
 }
 
+bool UALSWeaponFireComponent::HasWeaponEquipped() const
+{
+	const AALSCharacter* ALSChar = Cast<AALSCharacter>(GetOwner());
+	const USkeletalMeshComponent* WeaponMesh = ALSChar ? ALSChar->SkeletalMesh : nullptr;
+	return WeaponMesh && WeaponMesh->GetSkeletalMeshAsset();
+}
+
+int32 UALSWeaponFireComponent::GetCurrentReserveAmmo() const
+{
+	const AALSCharacter* ALSChar = Cast<AALSCharacter>(GetOwner());
+	if (!ALSChar)
+	{
+		return 0;
+	}
+
+	const FALSWeaponAmmoStats* Stats = AmmoStatsByOverlayState.Find(ALSChar->GetOverlayState());
+	if (!Stats)
+	{
+		return 0;
+	}
+
+	const UALSInventoryComponent* Inventory = ALSChar->FindComponentByClass<UALSInventoryComponent>();
+	return Inventory ? Inventory->GetItemQuantity(Stats->AmmoItemID) : 0;
+}
+
 void UALSWeaponFireComponent::Fire()
 {
 	AALSCharacter* ALSChar = Cast<AALSCharacter>(GetOwner());
@@ -1213,6 +1242,7 @@ void UALSWeaponFireComponent::Fire()
 			// the timer doing nothing but log "empty, click" every interval.
 			StopFiring();
 		}
+		OnAmmoChanged.Broadcast();
 	}
 }
 

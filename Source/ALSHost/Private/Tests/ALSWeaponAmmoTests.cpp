@@ -226,6 +226,42 @@ TEST_CLASS(ALSWeaponAmmoTests, "ALSHost.Weapon")
 				ASSERT_THAT(IsTrue(Weapon->GetCurrentAmmoInMagazine() < 29));
 			});
 	}
+
+	// Backs the small HUD ammo indicator (UALSStatusBarsWidget::AmmoText) -
+	// HasWeaponEquipped/GetCurrentReserveAmmo need to reflect reality both
+	// unarmed and armed, and the reserve number needs to track the
+	// inventory directly (ammo pickups never touch the weapon component).
+	TEST_METHOD(HasWeaponEquipped_AndReserveAmmo_ReflectCurrentState)
+	{
+		TestCommandBuilder
+			.StartWhen([this]() { return Spawner.IsValid(); })
+			.Then([this]() {
+				UClass* CharClass = LoadClass<AALSCharacter>(nullptr, TEXT("/ALSV4_CPP/AdvancedLocomotionV4/Blueprints/CharacterLogic/ALS_CharacterBP.ALS_CharacterBP_C"));
+				ASSERT_THAT(IsNotNull(CharClass));
+
+				Character = &Spawner->SpawnActorAt<AALSCharacter>(FVector::ZeroVector, FRotator::ZeroRotator, FActorSpawnParameters(), CharClass);
+				Weapon = Character->FindComponentByClass<UALSWeaponFireComponent>();
+				Inventory = Character->FindComponentByClass<UALSInventoryComponent>();
+				ASSERT_THAT(IsNotNull(Weapon));
+				ASSERT_THAT(IsNotNull(Inventory));
+
+				ASSERT_THAT(IsFalse(Weapon->HasWeaponEquipped()));
+				ASSERT_THAT(IsTrue(Weapon->GetCurrentReserveAmmo() == 0));
+
+				Character->SetOverlayState(EALSOverlayState::Rifle);
+			})
+			.WaitDelay(FTimespan::FromSeconds(0.2))
+			.Then([this]() {
+				ASSERT_THAT(IsTrue(Weapon->HasWeaponEquipped()));
+				ASSERT_THAT(IsTrue(Weapon->GetCurrentReserveAmmo() == 0));
+
+				// Picking up ammo goes straight to UALSInventoryComponent,
+				// never through the weapon component - reserve reporting has
+				// to pick that up without Fire()/Reload() ever running.
+				Inventory->AddItem(TEXT("Ammo_Rifle"), FText::FromString(TEXT("Rifle Ammo")), 60, 999);
+				ASSERT_THAT(IsTrue(Weapon->GetCurrentReserveAmmo() == 60));
+			});
+	}
 };
 
 #endif // WITH_AUTOMATION_TESTS

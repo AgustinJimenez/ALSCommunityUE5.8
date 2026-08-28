@@ -32,10 +32,22 @@ protected:
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> StaminaText;
 
+	// "12 / 48" (magazine / reserve), "Reloading...", or hidden entirely
+	// while unarmed - see RefreshAmmoText.
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> AmmoText;
+
 private:
 	UFUNCTION()
 	void HandleHealthChanged(float NewHealth, float MaxHealth, float Delta, AActor* DamageInstigator);
 
 	UFUNCTION()
 	void HandleStaminaChanged(float NewStamina, float MaxStamina);
+
+	// Bound to both UALSWeaponFireComponent::OnAmmoChanged (fire/reload/
+	// weapon-switch) and UALSInventoryComponent::OnInventoryChanged (picking
+	// up ammo updates the reserve count without touching the weapon
+	// component at all) - either one means the displayed numbers are stale.
+	UFUNCTION()
+	void RefreshAmmoText();
 };

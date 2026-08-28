@@ -69,6 +69,13 @@ struct FALSWeaponAmmoStats
 	FRotator ReloadHeldObjectRotationOffset = FRotator::ZeroRotator;
 };
 
+// Broadcast whenever CurrentAmmoInMagazine, IsReloading, or the currently
+// held weapon changes - HUD ammo counters (see UALSStatusBarsWidget) should
+// bind to this rather than polling every tick. No parameters - listeners
+// just re-read GetCurrentAmmoInMagazine/GetCurrentReserveAmmo/IsReloading
+// themselves, same pattern as UALSInventoryComponent::OnInventoryChanged.
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FALSOnAmmoChanged);
+
 // Hitscan weapon firing. Binds its own Enhanced Input action directly
 // (rather than routing through ALSPlayerController's name-based action
 // dispatch) so this stays entirely in ALSHost's own module - no edits
@@ -80,6 +87,24 @@ class ALSHOST_API UALSWeaponFireComponent : public UActorComponent
 
 public:
 	UALSWeaponFireComponent();
+
+	UPROPERTY(BlueprintAssignable, Category = "ALS|Weapon|Ammo")
+	FALSOnAmmoChanged OnAmmoChanged;
+
+	// True if the currently held object is an actual weapon (has a
+	// skeletal-mesh asset) - same check StartFiring() uses to decide whether
+	// pressing Fire should do anything at all. False for unarmed/Default,
+	// or props like Torch/Binoculars that have no skeletal mesh.
+	UFUNCTION(BlueprintPure, Category = "ALS|Weapon|Ammo")
+	bool HasWeaponEquipped() const;
+
+	// Reserve ammo currently held in the owning pawn's UALSInventoryComponent
+	// for whichever weapon is equipped right now (via that weapon's
+	// AmmoStatsByOverlayState entry's AmmoItemID). 0 if unarmed, no
+	// inventory component, or no ammo stats configured for this weapon
+	// (unlimited-ammo props).
+	UFUNCTION(BlueprintPure, Category = "ALS|Weapon|Ammo")
+	int32 GetCurrentReserveAmmo() const;
 
 	// Fire once from the currently held weapon's muzzle socket. Safe to call
 	// directly (e.g. from Blueprint) even without the input binding.

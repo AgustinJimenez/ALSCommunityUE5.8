@@ -4,6 +4,8 @@
 #include "Components/TextBlock.h"
 #include "Combat/ALSHealthComponent.h"
 #include "Stats/ALSStaminaComponent.h"
+#include "Weapon/ALSWeaponFireComponent.h"
+#include "Inventory/ALSInventoryComponent.h"
 
 void UALSStatusBarsWidget::NativeConstruct()
 {
@@ -26,6 +28,18 @@ void UALSStatusBarsWidget::NativeConstruct()
 		Stamina->OnStaminaChanged.AddDynamic(this, &UALSStatusBarsWidget::HandleStaminaChanged);
 		HandleStaminaChanged(Stamina->GetCurrentStamina(), Stamina->MaxStamina);
 	}
+
+	if (UALSWeaponFireComponent* Weapon = Pawn->FindComponentByClass<UALSWeaponFireComponent>())
+	{
+		Weapon->OnAmmoChanged.AddDynamic(this, &UALSStatusBarsWidget::RefreshAmmoText);
+	}
+
+	if (UALSInventoryComponent* Inventory = Pawn->FindComponentByClass<UALSInventoryComponent>())
+	{
+		Inventory->OnInventoryChanged.AddDynamic(this, &UALSStatusBarsWidget::RefreshAmmoText);
+	}
+
+	RefreshAmmoText();
 }
 
 void UALSStatusBarsWidget::HandleHealthChanged(float NewHealth, float MaxHealth, float Delta, AActor* DamageInstigator)
@@ -52,4 +66,30 @@ void UALSStatusBarsWidget::HandleStaminaChanged(float NewStamina, float MaxStami
 	{
 		StaminaText->SetText(FText::FromString(FString::Printf(TEXT("%d / %d"), FMath::RoundToInt(NewStamina), FMath::RoundToInt(MaxStamina))));
 	}
+}
+
+void UALSStatusBarsWidget::RefreshAmmoText()
+{
+	if (!AmmoText)
+	{
+		return;
+	}
+
+	APawn* Pawn = GetOwningPlayerPawn();
+	UALSWeaponFireComponent* Weapon = Pawn ? Pawn->FindComponentByClass<UALSWeaponFireComponent>() : nullptr;
+	if (!Weapon || !Weapon->HasWeaponEquipped())
+	{
+		AmmoText->SetVisibility(ESlateVisibility::Collapsed);
+		return;
+	}
+
+	AmmoText->SetVisibility(ESlateVisibility::Visible);
+
+	if (Weapon->IsReloading())
+	{
+		AmmoText->SetText(FText::FromString(TEXT("Reloading...")));
+		return;
+	}
+
+	AmmoText->SetText(FText::FromString(FString::Printf(TEXT("%d / %d"), Weapon->GetCurrentAmmoInMagazine(), Weapon->GetCurrentReserveAmmo())));
 }

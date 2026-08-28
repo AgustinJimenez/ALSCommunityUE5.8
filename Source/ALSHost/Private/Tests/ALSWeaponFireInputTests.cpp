@@ -25,9 +25,9 @@ struct FALSFireTestAction : public FTestAction
 	}
 };
 
-struct FALSToggleInventoryTestAction : public FTestAction
+struct FALSFireTestToggleInventoryAction : public FTestAction
 {
-	FALSToggleInventoryTestAction()
+	FALSFireTestToggleInventoryAction()
 	{
 		InputActionName = TEXT("IA_ToggleInventory");
 		InputActionValue = FInputActionValue(true);
@@ -48,7 +48,7 @@ public:
 
 	void PressToggleInventory()
 	{
-		PerformAction(FALSToggleInventoryTestAction{});
+		PerformAction(FALSFireTestToggleInventoryAction{});
 	}
 };
 
