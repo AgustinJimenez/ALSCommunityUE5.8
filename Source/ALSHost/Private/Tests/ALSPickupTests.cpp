@@ -242,4 +242,21 @@ TEST_CLASS(ALSWeaponPickupMeshTests, "ALSHost.Inventory")
 	}
 };
 
+// Guards against AALSHealthPickup silently reverting to the inherited
+// placeholder Sphere - both the box body (inherited Mesh, repurposed) and
+// the CoverMesh should have a real medkit static mesh assigned by default.
+TEST_CLASS(ALSHealthPickupMeshTests, "ALSHost.Inventory")
+{
+	FActorTestSpawner Spawner;
+
+	TEST_METHOD(HealthPickup_HasBoxAndCoverMeshesAssigned)
+	{
+		AALSHealthPickup& Pickup = Spawner.SpawnActor<AALSHealthPickup>();
+		ASSERT_THAT(IsNotNull(Pickup.GetMesh()));
+		ASSERT_THAT(IsNotNull(Pickup.GetMesh()->GetStaticMesh()));
+		ASSERT_THAT(IsNotNull(Pickup.CoverMesh));
+		ASSERT_THAT(IsNotNull(Pickup.CoverMesh->GetStaticMesh()));
+	}
+};
+
 #endif // WITH_AUTOMATION_TESTS
