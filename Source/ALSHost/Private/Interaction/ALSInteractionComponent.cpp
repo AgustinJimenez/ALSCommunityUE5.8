@@ -122,7 +122,8 @@ bool UALSInteractionComponent::TryInteract()
 	QueryParams.AddIgnoredActor(OwnerPawn);
 
 	FHitResult Hit;
-	const bool bHit = GetWorld()->LineTraceSingleByChannel(Hit, CameraLocation, TraceEnd, TraceChannel, QueryParams);
+	const bool bHit = GetWorld()->SweepSingleByChannel(Hit, CameraLocation, TraceEnd, FQuat::Identity, TraceChannel,
+		FCollisionShape::MakeSphere(InteractSphereRadius), QueryParams);
 
 	if (!bHit || !Hit.GetActor())
 	{

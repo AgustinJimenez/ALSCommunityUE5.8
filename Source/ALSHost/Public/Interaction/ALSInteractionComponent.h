@@ -24,9 +24,20 @@ class ALSHOST_API UALSInteractionComponent : public UActorComponent
 public:
 	UALSInteractionComponent();
 
-	// Max distance the interact trace reaches.
+	// Max distance the interact trace reaches. 400 rather than a tighter
+	// number because ALS's third-person camera pulls back further from the
+	// player when looking down at steep pitch (to avoid clipping into the
+	// ground) - exactly the look angle needed to aim at a ground-level
+	// item - so the camera-to-target distance for a close-by item is
+	// larger than it looks from behind the character.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "ALS|Interact")
-	float InteractRange = 200.0f;
+	float InteractRange = 400.0f;
+
+	// The trace is swept as a small sphere, not a bare line - aiming a
+	// thin raycast at a small ground item is unreasonably precise for a
+	// player to do reliably with a third-person camera.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "ALS|Interact")
+	float InteractSphereRadius = 30.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "ALS|Interact")
 	TEnumAsByte<ECollisionChannel> TraceChannel = ECC_Visibility;
