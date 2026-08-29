@@ -101,7 +101,18 @@ void UALSInteractionComponent::RefreshCurrentInteractable()
 	}
 
 	const FVector PawnLocation = OwnerPawn->GetActorLocation();
-	const FVector Forward = OwnerPawn->GetActorForwardVector();
+
+	// Facing direction comes from the CONTROLLER (where the camera/player is
+	// actually looking), not the pawn's own body-forward vector. ALS's
+	// rotation modes (Looking Direction / Velocity Direction / Aiming) mean
+	// the character's body can lag behind or fully diverge from where the
+	// camera is pointed - e.g. standing still after strafing in Velocity
+	// Direction mode leaves body-forward pointing wherever movement last
+	// happened, not where the player is currently looking - so gating on
+	// body-forward silently failed to detect anything the player was
+	// visually looking at but not physically facing with their character.
+	const AController* Controller = OwnerPawn->GetController();
+	const FVector Forward = Controller ? Controller->GetControlRotation().Vector() : OwnerPawn->GetActorForwardVector();
 
 	TArray<AActor*> Candidates;
 	UGameplayStatics::GetAllActorsWithInterface(this, UALSInteractable::StaticClass(), Candidates);

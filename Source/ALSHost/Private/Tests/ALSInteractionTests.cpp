@@ -155,6 +155,44 @@ TEST_CLASS(ALSInteractionRuntimeTests, "ALSHost.Interaction")
 			});
 	}
 
+	// Regression guard: the facing check must use where the CAMERA/controller
+	// is looking, not the pawn's own body-forward vector - ALS's rotation
+	// modes let a character's body lag behind or fully diverge from camera
+	// look direction (e.g. standing still after strafing in Velocity
+	// Direction mode), which silently broke detection of anything the
+	// player was visually looking at but not physically facing with their
+	// character. Body faces one way (+X, via SpawnActorAt's rotation),
+	// camera looks a completely different way (+Y, via SetControlRotation)
+	// straight at the door - only passes if the facing check uses the
+	// controller's rotation.
+	TEST_METHOD(InteractionComponent_TryInteract_UsesCameraFacing_NotBodyFacing)
+	{
+		TestCommandBuilder
+			.StartWhen([this]() { return Spawner.IsValid(); })
+			.Then([this]() {
+				SpawnCharacterAndPossess(FVector::ZeroVector);
+				Character->SetActorRotation(FRotator(0.f, 0.f, 0.f)); // Body faces +X.
+
+				APlayerController* PC = UGameplayStatics::GetPlayerController(&Spawner->GetWorld(), 0);
+				ASSERT_THAT(IsNotNull(PC));
+				PC->SetControlRotation(FRotator(0.f, 90.f, 0.f)); // Camera looks +Y.
+
+				Interaction = NewObject<UALSInteractionComponent>(Character);
+				Interaction->RegisterComponent();
+
+				// Placed along +Y (where the camera looks), not +X (where the
+				// body faces) - a body-forward-based facing check would miss
+				// this entirely.
+				Door = &Spawner->SpawnActorAt<AALSDoor>(FVector(0.f, 150.f, 0.f), FRotator::ZeroRotator);
+				ASSERT_THAT(IsFalse(Door->IsOpen()));
+			})
+			.WaitDelay(FTimespan::FromSeconds(0.2))
+			.Then([this]() {
+				ASSERT_THAT(IsTrue(Interaction->TryInteract()));
+				ASSERT_THAT(IsTrue(Door->IsOpen()));
+			});
+	}
+
 	TEST_METHOD(MeleeComponent_Fist_DealsDamageToActorInRange)
 	{
 		TestCommandBuilder
