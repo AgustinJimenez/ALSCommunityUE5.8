@@ -8,23 +8,11 @@
 #include "InputAction.h"
 #include "InputMappingContext.h"
 #include "Engine/World.h"
-#include "Engine/Engine.h"
-#include "DrawDebugHelpers.h"
-
-// Same pattern as ALS.Weapon.ShowDebugTrace - purely visual, does not affect
-// hit detection. Off by default now that the door/loot-container/pickup
-// interact flow is confirmed working; flip it back on with
-// `ALS.Interact.ShowDebugTrace 1` if a future "E does nothing" report needs
-// diagnosing again without attaching a debugger.
-static TAutoConsoleVariable<bool> CVarALSInteractShowDebugTrace(
-	TEXT("ALS.Interact.ShowDebugTrace"),
-	false,
-	TEXT("Draw the interact trace and show an on-screen message every time the Interact key is pressed, reporting whether it hit anything interactable. Purely visual - does not affect hit detection."),
-	ECVF_Default);
+#include "Kismet/GameplayStatics.h"
 
 UALSInteractionComponent::UALSInteractionComponent()
 {
-	PrimaryComponentTick.bCanEverTick = false;
+	PrimaryComponentTick.bCanEverTick = true;
 }
 
 void UALSInteractionComponent::BeginPlay()
@@ -46,6 +34,12 @@ void UALSInteractionComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 		OwnerPawn->ReceiveControllerChangedDelegate.RemoveDynamic(this, &UALSInteractionComponent::HandleControllerChanged);
 	}
 	Super::EndPlay(EndPlayReason);
+}
+
+void UALSInteractionComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
+{
+	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+	RefreshCurrentInteractable();
 }
 
 void UALSInteractionComponent::HandleControllerChanged(APawn* Pawn, AController* OldController, AController* NewController)
@@ -98,64 +92,68 @@ void UALSInteractionComponent::HandleInteractInput(const FInputActionValue& Valu
 	TryInteract();
 }
 
+void UALSInteractionComponent::RefreshCurrentInteractable()
+{
+	const APawn* OwnerPawn = Cast<APawn>(GetOwner());
+	if (!OwnerPawn)
+	{
+		return;
+	}
+
+	const FVector PawnLocation = OwnerPawn->GetActorLocation();
+	const FVector Forward = OwnerPawn->GetActorForwardVector();
+
+	TArray<AActor*> Candidates;
+	UGameplayStatics::GetAllActorsWithInterface(this, UALSInteractable::StaticClass(), Candidates);
+
+	AActor* Best = nullptr;
+	float BestDistSq = FMath::Square(InteractRange);
+
+	for (AActor* Candidate : Candidates)
+	{
+		if (!Candidate || Candidate == OwnerPawn)
+		{
+			continue;
+		}
+
+		const FVector ToCandidate = Candidate->GetActorLocation() - PawnLocation;
+		const float DistSq = ToCandidate.SizeSquared();
+		if (DistSq > BestDistSq)
+		{
+			continue;
+		}
+
+		if (!ToCandidate.IsNearlyZero() && (Forward | ToCandidate.GetSafeNormal()) < InteractFacingCosineThreshold)
+		{
+			continue;
+		}
+
+		Best = Candidate;
+		BestDistSq = DistSq;
+	}
+
+	const FText Prompt = Best ? IALSInteractable::Execute_GetInteractionPrompt(Best) : FText::GetEmpty();
+	if (Best != CurrentInteractable || !Prompt.EqualTo(LastBroadcastPrompt))
+	{
+		CurrentInteractable = Best;
+		LastBroadcastPrompt = Prompt;
+		OnInteractableChanged.Broadcast(Best, Prompt);
+	}
+}
+
 bool UALSInteractionComponent::TryInteract()
 {
+	if (!CurrentInteractable)
+	{
+		return false;
+	}
+
 	APawn* OwnerPawn = Cast<APawn>(GetOwner());
 	if (!OwnerPawn)
 	{
 		return false;
 	}
 
-	APlayerController* PC = Cast<APlayerController>(OwnerPawn->GetController());
-	if (!PC)
-	{
-		return false;
-	}
-
-	FVector CameraLocation;
-	FRotator CameraRotation;
-	PC->GetPlayerViewPoint(CameraLocation, CameraRotation);
-	const FVector TraceEnd = CameraLocation + CameraRotation.Vector() * InteractRange;
-
-	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(ALSInteract), /*bTraceComplex=*/false);
-	QueryParams.AddIgnoredActor(OwnerPawn);
-
-	FHitResult Hit;
-	const bool bHit = GetWorld()->SweepSingleByChannel(Hit, CameraLocation, TraceEnd, FQuat::Identity, TraceChannel,
-		FCollisionShape::MakeSphere(InteractSphereRadius), QueryParams);
-
-	if (!bHit || !Hit.GetActor())
-	{
-		if (CVarALSInteractShowDebugTrace.GetValueOnGameThread())
-		{
-			DrawDebugLine(GetWorld(), CameraLocation, TraceEnd, FColor::Yellow, false, 1.0f, 0, 0.5f);
-			if (GEngine)
-			{
-				GEngine->AddOnScreenDebugMessage(-1, 1.0f, FColor::Yellow, TEXT("Interact: nothing in range/aim"));
-			}
-		}
-		return false;
-	}
-
-	AActor* HitActor = Hit.GetActor();
-	const bool bIsInteractable = HitActor->GetClass()->ImplementsInterface(UALSInteractable::StaticClass());
-
-	if (CVarALSInteractShowDebugTrace.GetValueOnGameThread())
-	{
-		DrawDebugLine(GetWorld(), CameraLocation, Hit.ImpactPoint, bIsInteractable ? FColor::Green : FColor::Red, false, 1.0f, 0, 0.5f);
-		DrawDebugPoint(GetWorld(), Hit.ImpactPoint, 8.0f, bIsInteractable ? FColor::Green : FColor::Red, false, 1.0f);
-		if (GEngine)
-		{
-			GEngine->AddOnScreenDebugMessage(-1, 1.0f, bIsInteractable ? FColor::Green : FColor::Red,
-				FString::Printf(TEXT("Interact: hit %s (%s)"), *HitActor->GetName(), bIsInteractable ? TEXT("interactable") : TEXT("not interactable")));
-		}
-	}
-
-	if (!bIsInteractable)
-	{
-		return false;
-	}
-
-	IALSInteractable::Execute_Interact(HitActor, OwnerPawn);
+	IALSInteractable::Execute_Interact(CurrentInteractable, OwnerPawn);
 	return true;
 }
