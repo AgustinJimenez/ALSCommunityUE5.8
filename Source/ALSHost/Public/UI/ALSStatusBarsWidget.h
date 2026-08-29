@@ -49,12 +49,27 @@ protected:
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> DeathText;
 
+	// "Enemies remaining: N" - hidden entirely on a level with no
+	// UALSObjectiveSubsystem-tracked enemies (nothing to show).
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> ObjectiveText;
+
+	// Shown once, permanently, the moment UALSObjectiveSubsystem::OnAllEnemiesDefeated fires.
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> VictoryText;
+
 private:
 	UFUNCTION()
 	void HandleHealthChanged(float NewHealth, float MaxHealth, float Delta, AActor* DamageInstigator);
 
 	UFUNCTION()
 	void HandleDeath(AActor* Killer);
+
+	UFUNCTION()
+	void HandleEnemyCountChanged(int32 RemainingEnemyCount);
+
+	UFUNCTION()
+	void HandleAllEnemiesDefeated();
 
 	UFUNCTION()
 	void HandleStaminaChanged(float NewStamina, float MaxStamina);

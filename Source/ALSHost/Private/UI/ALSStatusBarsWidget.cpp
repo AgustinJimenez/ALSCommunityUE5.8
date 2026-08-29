@@ -7,6 +7,7 @@
 #include "Weapon/ALSWeaponFireComponent.h"
 #include "Inventory/ALSInventoryComponent.h"
 #include "Combat/ALSMedkitComponent.h"
+#include "Combat/ALSObjectiveSubsystem.h"
 
 void UALSStatusBarsWidget::NativeConstruct()
 {
@@ -26,6 +27,25 @@ void UALSStatusBarsWidget::NativeConstruct()
 	if (DeathText)
 	{
 		DeathText->SetVisibility(ESlateVisibility::Collapsed);
+	}
+
+	if (VictoryText)
+	{
+		VictoryText->SetVisibility(ESlateVisibility::Collapsed);
+	}
+
+	if (UWorld* World = GetWorld())
+	{
+		if (UALSObjectiveSubsystem* Objective = World->GetSubsystem<UALSObjectiveSubsystem>())
+		{
+			Objective->OnEnemyCountChanged.AddDynamic(this, &UALSStatusBarsWidget::HandleEnemyCountChanged);
+			Objective->OnAllEnemiesDefeated.AddDynamic(this, &UALSStatusBarsWidget::HandleAllEnemiesDefeated);
+			HandleEnemyCountChanged(Objective->GetRemainingEnemyCount());
+			if (ObjectiveText)
+			{
+				ObjectiveText->SetVisibility(Objective->HasAnyTrackedEnemies() ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+			}
+		}
 	}
 
 	if (UALSMedkitComponent* Medkit = Pawn->FindComponentByClass<UALSMedkitComponent>())
@@ -87,6 +107,22 @@ void UALSStatusBarsWidget::HandleDeath(AActor* Killer)
 	if (DeathText)
 	{
 		DeathText->SetVisibility(ESlateVisibility::Visible);
+	}
+}
+
+void UALSStatusBarsWidget::HandleEnemyCountChanged(int32 RemainingEnemyCount)
+{
+	if (ObjectiveText)
+	{
+		ObjectiveText->SetText(FText::FromString(FString::Printf(TEXT("Enemies remaining: %d"), RemainingEnemyCount)));
+	}
+}
+
+void UALSStatusBarsWidget::HandleAllEnemiesDefeated()
+{
+	if (VictoryText)
+	{
+		VictoryText->SetVisibility(ESlateVisibility::Visible);
 	}
 }
 
