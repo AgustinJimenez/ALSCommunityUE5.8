@@ -8,6 +8,7 @@
 class UInputAction;
 class UInputMappingContext;
 class USoundBase;
+class UAnimSequenceBase;
 
 // Bare-fist melee is always available regardless of what's equipped
 // (unlike UALSWeaponFireComponent, which requires a skeletal-mesh weapon)
@@ -62,6 +63,25 @@ public:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "ALS|Melee")
 	FName AxeItemID = TEXT("Weapon_Axe");
+
+	// Played via PlaySlotAnimationAsDynamicMontage (same mechanism
+	// UALSWeaponFireComponent::Reload() already uses) whenever a swing
+	// actually happens - a bare-fist attack previously played nothing at
+	// all. WeaponSwingAnimation is used instead of FistSwingAnimation
+	// whenever HasAxeEquipped()/HasKnifeEquipped() is true (a weapon swing
+	// reads differently from a punch); either can be left unset to just not
+	// play anything for that case.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "ALS|Melee|Animation")
+	TObjectPtr<UAnimSequenceBase> FistSwingAnimation;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "ALS|Melee|Animation")
+	TObjectPtr<UAnimSequenceBase> WeaponSwingAnimation;
+
+	// Same full-body slot Reload() already plays on - a melee swing needs
+	// both arms plus the spine just like a two-handed reload does (see
+	// AGENTS.md on why "Grounded Slot" was picked for that).
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "ALS|Melee|Animation")
+	FName MeleeMontageSlotName = TEXT("Grounded Slot");
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "ALS|Melee|Effects")
 	TObjectPtr<USoundBase> SwingSound;

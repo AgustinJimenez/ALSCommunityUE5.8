@@ -2,6 +2,7 @@
 
 #include "Inventory/ALSInventoryComponent.h"
 #include "GameFramework/Pawn.h"
+#include "GameFramework/Character.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/DamageType.h"
 #include "Kismet/GameplayStatics.h"
@@ -10,6 +11,8 @@
 #include "InputAction.h"
 #include "InputMappingContext.h"
 #include "Engine/World.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "Animation/AnimInstance.h"
 
 UALSMeleeComponent::UALSMeleeComponent()
 {
@@ -135,6 +138,23 @@ bool UALSMeleeComponent::TryMeleeAttack()
 	if (SwingSound)
 	{
 		UGameplayStatics::PlaySoundAtLocation(this, SwingSound, OwnerPawn->GetActorLocation());
+	}
+
+	// Play regardless of whether the sweep below actually lands a hit - a
+	// swing that misses should still animate.
+	UAnimSequenceBase* SwingAnimation = (HasAxeEquipped() || HasKnifeEquipped()) ? WeaponSwingAnimation : FistSwingAnimation;
+	if (SwingAnimation)
+	{
+		if (const ACharacter* OwnerCharacter = Cast<ACharacter>(OwnerPawn))
+		{
+			if (USkeletalMeshComponent* BodyMesh = OwnerCharacter->GetMesh())
+			{
+				if (UAnimInstance* AnimInstance = BodyMesh->GetAnimInstance())
+				{
+					AnimInstance->PlaySlotAnimationAsDynamicMontage(SwingAnimation, MeleeMontageSlotName, 0.1f, 0.1f, 1.0f, 1);
+				}
+			}
+		}
 	}
 
 	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(ALSMelee), /*bTraceComplex=*/false);

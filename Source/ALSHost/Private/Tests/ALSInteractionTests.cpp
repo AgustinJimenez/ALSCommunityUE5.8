@@ -15,6 +15,9 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/PlayerController.h"
 #include "Kismet/GameplayStatics.h"
+#include "Animation/AnimInstance.h"
+#include "Animation/AnimSequenceBase.h"
+#include "Components/SkeletalMeshComponent.h"
 
 // Door/loot toggling itself is pure state, no BeginPlay dependency -
 // FActorTestSpawner is enough (matches ALSWeaponDamageTests' reasoning).
@@ -316,6 +319,32 @@ TEST_CLASS(ALSInteractionRuntimeTests, "ALSHost.Interaction")
 				// Axe bonus should win, not stack with the knife's.
 				const float ExpectedDamage = Melee->FistDamage + Melee->AxeDamageBonus;
 				ASSERT_THAT(IsNear(TargetHealth->GetCurrentHealth(), HealthBefore - ExpectedDamage, 0.5f));
+			});
+	}
+
+	TEST_METHOD(MeleeComponent_Attack_PlaysSwingMontage)
+	{
+		TestCommandBuilder
+			.StartWhen([this]() { return Spawner.IsValid(); })
+			.Then([this]() {
+				SpawnCharacterAndPossess(FVector::ZeroVector);
+
+				UAnimSequenceBase* SwingAnim = LoadObject<UAnimSequenceBase>(nullptr, TEXT("/Game/ALSHost/Animations/AS_Punch_Cross.AS_Punch_Cross"));
+				ASSERT_THAT(IsNotNull(SwingAnim));
+
+				Melee = NewObject<UALSMeleeComponent>(Character);
+				Melee->MeleeRange = 300.f;
+				Melee->SweepRadius = 60.f;
+				Melee->FistSwingAnimation = SwingAnim;
+				Melee->RegisterComponent();
+
+				UAnimInstance* AnimInstance = Character->GetMesh()->GetAnimInstance();
+				ASSERT_THAT(IsNotNull(AnimInstance));
+				ASSERT_THAT(IsNull(AnimInstance->GetCurrentActiveMontage()));
+
+				ASSERT_THAT(IsTrue(Melee->TryMeleeAttack()));
+
+				ASSERT_THAT(IsNotNull(AnimInstance->GetCurrentActiveMontage()));
 			});
 	}
 
