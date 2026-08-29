@@ -7,8 +7,6 @@
 #include "Weapon/ALSWeaponFireComponent.h"
 #include "Inventory/ALSInventoryComponent.h"
 #include "Combat/ALSMedkitComponent.h"
-#include "Interaction/ALSInteractionComponent.h"
-#include "GameFramework/PlayerController.h"
 
 void UALSStatusBarsWidget::NativeConstruct()
 {
@@ -23,11 +21,6 @@ void UALSStatusBarsWidget::NativeConstruct()
 	if (MedkitApplyBar)
 	{
 		MedkitApplyBar->SetVisibility(ESlateVisibility::Collapsed);
-	}
-
-	if (InteractPromptText)
-	{
-		InteractPromptText->SetVisibility(ESlateVisibility::Collapsed);
 	}
 
 	if (UALSMedkitComponent* Medkit = Pawn->FindComponentByClass<UALSMedkitComponent>())
@@ -59,41 +52,7 @@ void UALSStatusBarsWidget::NativeConstruct()
 		Inventory->OnInventoryChanged.AddDynamic(this, &UALSStatusBarsWidget::RefreshAmmoText);
 	}
 
-	if (UALSInteractionComponent* Interaction = Pawn->FindComponentByClass<UALSInteractionComponent>())
-	{
-		Interaction->OnInteractableChanged.AddDynamic(this, &UALSStatusBarsWidget::HandleInteractableChanged);
-	}
-
 	RefreshAmmoText();
-}
-
-void UALSStatusBarsWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
-{
-	Super::NativeTick(MyGeometry, InDeltaTime);
-
-	if (!InteractPromptText || !InteractTarget)
-	{
-		return;
-	}
-
-	APlayerController* PC = GetOwningPlayer();
-	if (!PC)
-	{
-		return;
-	}
-
-	// Float the label a little above the object's own origin, not right on
-	// top of it - most interactable pivots sit at or near the ground.
-	FVector2D ScreenPosition;
-	const bool bOnScreen = PC->ProjectWorldLocationToScreen(InteractTarget->GetActorLocation() + FVector(0.f, 0.f, 80.f), ScreenPosition);
-	if (!bOnScreen)
-	{
-		InteractPromptText->SetVisibility(ESlateVisibility::Collapsed);
-		return;
-	}
-
-	InteractPromptText->SetVisibility(ESlateVisibility::HitTestInvisible);
-	InteractPromptText->SetRenderTranslation(ScreenPosition);
 }
 
 void UALSStatusBarsWidget::HandleHealthChanged(float NewHealth, float MaxHealth, float Delta, AActor* DamageInstigator)
@@ -171,22 +130,4 @@ void UALSStatusBarsWidget::HandleMedkitApplyEnded(bool bCompleted)
 	{
 		MedkitApplyBar->SetVisibility(ESlateVisibility::Collapsed);
 	}
-}
-
-void UALSStatusBarsWidget::HandleInteractableChanged(AActor* NewInteractable, FText Prompt)
-{
-	InteractTarget = NewInteractable;
-
-	if (!InteractPromptText)
-	{
-		return;
-	}
-
-	if (!NewInteractable)
-	{
-		InteractPromptText->SetVisibility(ESlateVisibility::Collapsed);
-		return;
-	}
-
-	InteractPromptText->SetText(FText::Format(NSLOCTEXT("ALSHost", "InteractPrompt", "[E] {0}"), Prompt));
 }

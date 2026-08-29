@@ -3,14 +3,13 @@
 #include "Components/StaticMeshComponent.h"
 #include "Components/TextRenderComponent.h"
 #include "GameFramework/Pawn.h"
-#include "Camera/PlayerCameraManager.h"
-#include "Kismet/GameplayStatics.h"
 #include "UObject/ConstructorHelpers.h"
 
 AALSPickupBase::AALSPickupBase()
 {
-	// Ticks solely to keep LabelText facing the camera (see Tick()) -
-	// UTextRenderComponent has no built-in billboard-to-camera behavior.
+	// Ticks solely to keep LabelText facing the camera while visible (see
+	// Tick()) - UTextRenderComponent has no built-in billboard-to-camera
+	// behavior.
 	PrimaryActorTick.bCanEverTick = true;
 
 	// Mesh is the root so it can simulate physics - a dropped/placed pickup
@@ -39,38 +38,26 @@ AALSPickupBase::AALSPickupBase()
 	LabelText->SetVerticalAlignment(EVRTA_TextBottom);
 	LabelText->SetWorldSize(24.f);
 	LabelText->SetTextRenderColor(FColor::White);
+	// Hidden until UALSInteractionComponent marks this pickup as the
+	// player's current interact target - see SetInteractPromptVisible_Implementation.
+	LabelText->SetVisibility(false);
 }
 
 void AALSPickupBase::BeginPlay()
 {
 	Super::BeginPlay();
-
-	if (LabelText)
-	{
-		LabelText->SetText(PickupLabel);
-	}
 }
 
 void AALSPickupBase::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
 
-	if (!LabelText)
+	if (!LabelText || !LabelText->IsVisible())
 	{
 		return;
 	}
 
-	// UTextRenderComponent has no built-in camera-facing behavior, unlike a
-	// screen-space UWidgetComponent - rotate it manually every frame so the
-	// label stays legible from whichever direction the player approaches.
-	if (const APlayerCameraManager* CameraManager = UGameplayStatics::GetPlayerCameraManager(this, 0))
-	{
-		const FVector ToCamera = CameraManager->GetCameraLocation() - LabelText->GetComponentLocation();
-		if (!ToCamera.IsNearlyZero())
-		{
-			LabelText->SetWorldRotation(ToCamera.Rotation());
-		}
-	}
+	ALSFaceTextTowardCamera(LabelText, this);
 }
 
 void AALSPickupBase::Interact_Implementation(APawn* Interactor)
@@ -92,4 +79,18 @@ void AALSPickupBase::Interact_Implementation(APawn* Interactor)
 FText AALSPickupBase::GetInteractionPrompt_Implementation() const
 {
 	return PickupLabel.IsEmpty() ? FText::FromString(TEXT("Pick Up")) : FText::Format(NSLOCTEXT("ALSHost", "PickupPrompt", "Pick Up {0}"), PickupLabel);
+}
+
+void AALSPickupBase::SetInteractPromptVisible_Implementation(bool bVisible)
+{
+	if (!LabelText)
+	{
+		return;
+	}
+
+	LabelText->SetVisibility(bVisible);
+	if (bVisible)
+	{
+		LabelText->SetText(GetInteractionPrompt_Implementation());
+	}
 }

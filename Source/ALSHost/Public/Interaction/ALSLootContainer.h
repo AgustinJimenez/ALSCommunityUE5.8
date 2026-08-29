@@ -6,6 +6,7 @@
 #include "ALSLootContainer.generated.h"
 
 class UStaticMeshComponent;
+class UTextRenderComponent;
 
 // A single-line loot entry - deliberately the same shape as
 // UALSInventoryComponent::AddItem's own parameters, since that's exactly
@@ -48,11 +49,21 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ALS|Loot")
 	TObjectPtr<UStaticMeshComponent> ContainerMesh;
 
+	// Floating prompt label - hidden by default, only shown while this
+	// container is the player's current interact target. See
+	// ALSInteractable.h.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ALS|Loot")
+	TObjectPtr<UTextRenderComponent> PromptText;
+
 	UFUNCTION(BlueprintPure, Category = "ALS|Loot")
 	bool IsOpened() const { return bOpened; }
 
 	virtual void Interact_Implementation(APawn* Interactor) override;
 	virtual FText GetInteractionPrompt_Implementation() const override;
+	virtual void SetInteractPromptVisible_Implementation(bool bVisible) override;
+
+protected:
+	virtual void Tick(float DeltaSeconds) override;
 
 private:
 	bool bOpened = false;

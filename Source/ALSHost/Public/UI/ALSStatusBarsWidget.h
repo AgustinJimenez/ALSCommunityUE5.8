@@ -42,17 +42,6 @@ protected:
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UProgressBar> MedkitApplyBar;
 
-	// "[E] <prompt>" label that floats near whatever UALSInteractionComponent
-	// currently considers interactable - hidden when there's no target. See
-	// HandleInteractableChanged (shows/hides + sets text) and NativeTick
-	// (repositions every frame via ProjectWorldLocationToScreen, since the
-	// target and/or camera can move continuously).
-	UPROPERTY(meta = (BindWidgetOptional))
-	TObjectPtr<UTextBlock> InteractPromptText;
-
-protected:
-	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
-
 private:
 	UFUNCTION()
 	void HandleHealthChanged(float NewHealth, float MaxHealth, float Delta, AActor* DamageInstigator);
@@ -75,10 +64,4 @@ private:
 
 	UFUNCTION()
 	void HandleMedkitApplyEnded(bool bCompleted);
-
-	UFUNCTION()
-	void HandleInteractableChanged(AActor* NewInteractable, FText Prompt);
-
-	UPROPERTY()
-	TObjectPtr<AActor> InteractTarget;
 };

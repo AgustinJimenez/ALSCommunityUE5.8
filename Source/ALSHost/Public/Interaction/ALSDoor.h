@@ -7,6 +7,7 @@
 
 class UStaticMeshComponent;
 class USceneComponent;
+class UTextRenderComponent;
 
 // Interact() toggles between closed and open, swinging smoothly around the
 // actor's own placed location (the hinge point) rather than the mesh's
@@ -41,11 +42,17 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ALS|Door")
 	TObjectPtr<UStaticMeshComponent> DoorMesh;
 
+	// Floating prompt label - hidden by default, only shown while this door
+	// is the player's current interact target. See ALSInteractable.h.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ALS|Door")
+	TObjectPtr<UTextRenderComponent> PromptText;
+
 	UFUNCTION(BlueprintPure, Category = "ALS|Door")
 	bool IsOpen() const { return bIsOpen; }
 
 	virtual void Interact_Implementation(APawn* Interactor) override;
 	virtual FText GetInteractionPrompt_Implementation() const override;
+	virtual void SetInteractPromptVisible_Implementation(bool bVisible) override;
 
 protected:
 	virtual void Tick(float DeltaSeconds) override;

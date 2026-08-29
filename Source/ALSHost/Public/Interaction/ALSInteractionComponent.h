@@ -8,8 +8,6 @@
 class UInputAction;
 class UInputMappingContext;
 
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FALSOnInteractableChanged, AActor*, NewInteractable, FText, Prompt);
-
 // Binds its own Enhanced Input action directly, same self-contained pattern
 // as UALSWeaponFireComponent/UALSInventoryComponent - no edits needed to
 // the vendored ALS-Community-UE5 plugin.
@@ -21,12 +19,13 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FALSOnInteractableChanged, AActor*,
 // perfect aim, which is unreasonable in third person (the camera sits
 // offset from the player and pulls back further at steep look-down
 // angles), so "near and roughly facing it" is the standard third-person
-// convention instead. The result is cached as CurrentInteractable and
-// broadcast via OnInteractableChanged only when it actually changes, so a
-// HUD widget can show a "[E] <prompt>" label near the object without
-// polling every frame. Pressing Interact calls Execute_Interact on
-// whatever CurrentInteractable currently is - same target the UI is
-// showing, by construction.
+// convention instead. The current target (if any) gets
+// IALSInteractable::SetInteractPromptVisible(true) called on it every tick
+// (so its own floating prompt label - see ALSInteractable.h - stays
+// current even if the prompt text itself changes), and the previous target
+// gets SetInteractPromptVisible(false) the instant it stops being current.
+// Pressing Interact calls Execute_Interact on whatever CurrentInteractable
+// currently is - the same target showing its own prompt, by construction.
 UCLASS(ClassGroup = (ALSHost), meta = (BlueprintSpawnableComponent))
 class ALSHOST_API UALSInteractionComponent : public UActorComponent
 {
@@ -45,9 +44,6 @@ public:
 	// just be facing roughly toward the object.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "ALS|Interact")
 	float InteractFacingCosineThreshold = 0.5f;
-
-	UPROPERTY(BlueprintAssignable, Category = "ALS|Interact")
-	FALSOnInteractableChanged OnInteractableChanged;
 
 	UFUNCTION(BlueprintPure, Category = "ALS|Interact")
 	AActor* GetCurrentInteractable() const { return CurrentInteractable; }
@@ -82,10 +78,4 @@ private:
 
 	UPROPERTY()
 	TObjectPtr<AActor> CurrentInteractable;
-
-	// Compared alongside CurrentInteractable so a prompt text change on the
-	// SAME target (e.g. a loot container's prompt going from "Open" to
-	// "(Empty)" the instant it's looted) still re-broadcasts, not just a
-	// change of target.
-	FText LastBroadcastPrompt;
 };

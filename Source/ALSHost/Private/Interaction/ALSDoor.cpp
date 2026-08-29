@@ -2,6 +2,7 @@
 
 #include "Components/StaticMeshComponent.h"
 #include "Components/SceneComponent.h"
+#include "Components/TextRenderComponent.h"
 #include "UObject/ConstructorHelpers.h"
 
 AALSDoor::AALSDoor()
@@ -26,6 +27,15 @@ AALSDoor::AALSDoor()
 	{
 		DoorMesh->SetStaticMesh(DefaultMeshFinder.Object);
 	}
+
+	PromptText = CreateDefaultSubobject<UTextRenderComponent>(TEXT("PromptText"));
+	PromptText->SetupAttachment(HingeRoot);
+	PromptText->SetRelativeLocation(FVector(0.f, 50.f, 230.f));
+	PromptText->SetHorizontalAlignment(EHTA_Center);
+	PromptText->SetVerticalAlignment(EVRTA_TextBottom);
+	PromptText->SetWorldSize(24.f);
+	PromptText->SetTextRenderColor(FColor::White);
+	PromptText->SetVisibility(false);
 }
 
 void AALSDoor::Interact_Implementation(APawn* Interactor)
@@ -39,15 +49,32 @@ FText AALSDoor::GetInteractionPrompt_Implementation() const
 	return bIsOpen ? FText::FromString(TEXT("Close Door")) : FText::FromString(TEXT("Open Door"));
 }
 
-void AALSDoor::Tick(float DeltaSeconds)
+void AALSDoor::SetInteractPromptVisible_Implementation(bool bVisible)
 {
-	Super::Tick(DeltaSeconds);
-
-	if (FMath::IsNearlyEqual(CurrentRelativeYaw, TargetRelativeYaw, 0.1f))
+	if (!PromptText)
 	{
 		return;
 	}
 
-	CurrentRelativeYaw = FMath::FixedTurn(CurrentRelativeYaw, TargetRelativeYaw, SwingSpeedDegreesPerSecond * DeltaSeconds);
-	HingeRoot->SetRelativeRotation(FRotator(0.f, CurrentRelativeYaw, 0.f));
+	PromptText->SetVisibility(bVisible);
+	if (bVisible)
+	{
+		PromptText->SetText(GetInteractionPrompt_Implementation());
+	}
+}
+
+void AALSDoor::Tick(float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+
+	if (!FMath::IsNearlyEqual(CurrentRelativeYaw, TargetRelativeYaw, 0.1f))
+	{
+		CurrentRelativeYaw = FMath::FixedTurn(CurrentRelativeYaw, TargetRelativeYaw, SwingSpeedDegreesPerSecond * DeltaSeconds);
+		HingeRoot->SetRelativeRotation(FRotator(0.f, CurrentRelativeYaw, 0.f));
+	}
+
+	if (PromptText && PromptText->IsVisible())
+	{
+		ALSFaceTextTowardCamera(PromptText, this);
+	}
 }

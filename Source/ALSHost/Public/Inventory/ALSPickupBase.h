@@ -22,12 +22,14 @@ class ALSHOST_API AALSPickupBase : public AActor, public IALSInteractable
 public:
 	AALSPickupBase();
 
-	// Floating text shown above the pickup (e.g. "Rifle", "Health Pack") -
-	// set per-instance in the level, purely cosmetic/identification, not
-	// tied to any inventory ItemID.
+	// Used to build the interact prompt ("Pick Up {PickupLabel}") - set
+	// per-instance in the level, not tied to any inventory ItemID.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ALS|Pickup")
 	FText PickupLabel;
 
+	// Floating prompt label - hidden by default, only shown (via
+	// SetInteractPromptVisible_Implementation) while this pickup is the
+	// player's current interact target. See ALSInteractable.h.
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ALS|Pickup")
 	TObjectPtr<UTextRenderComponent> LabelText;
 
@@ -35,6 +37,7 @@ public:
 
 	virtual void Interact_Implementation(APawn* Interactor) override;
 	virtual FText GetInteractionPrompt_Implementation() const override;
+	virtual void SetInteractPromptVisible_Implementation(bool bVisible) override;
 
 protected:
 	virtual void BeginPlay() override;

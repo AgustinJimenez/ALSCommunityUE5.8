@@ -132,12 +132,23 @@ void UALSInteractionComponent::RefreshCurrentInteractable()
 		BestDistSq = DistSq;
 	}
 
-	const FText Prompt = Best ? IALSInteractable::Execute_GetInteractionPrompt(Best) : FText::GetEmpty();
-	if (Best != CurrentInteractable || !Prompt.EqualTo(LastBroadcastPrompt))
+	if (Best != CurrentInteractable)
 	{
+		if (CurrentInteractable && CurrentInteractable->GetClass()->ImplementsInterface(UALSInteractable::StaticClass()))
+		{
+			IALSInteractable::Execute_SetInteractPromptVisible(CurrentInteractable, false);
+		}
 		CurrentInteractable = Best;
-		LastBroadcastPrompt = Prompt;
-		OnInteractableChanged.Broadcast(Best, Prompt);
+	}
+
+	if (CurrentInteractable)
+	{
+		// Called every tick, not just on change, so a prompt-text change on
+		// the SAME target (e.g. a loot container's prompt going from "Open"
+		// to "(Empty)" the instant it's looted) stays current - each
+		// implementer re-fetches GetInteractionPrompt() itself when told to
+		// show, see ALSInteractable.h.
+		IALSInteractable::Execute_SetInteractPromptVisible(CurrentInteractable, true);
 	}
 }
 
