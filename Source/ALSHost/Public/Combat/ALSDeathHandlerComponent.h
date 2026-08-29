@@ -24,6 +24,23 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "ALS|Death")
 	float RespawnDelaySeconds = 5.f;
 
+	// Item dropped at the death location - only for a permanently-ragdolled
+	// death (RespawnDelaySeconds <= 0, i.e. an enemy - a respawning player
+	// has nothing to "drop"). None (default) means no loot at all. Spawns a
+	// plain AALSItemPickup, the same generic pickup class ammo/other loot
+	// already uses elsewhere in this project (see AGENTS.md) - no dedicated
+	// per-item pickup subclass needed.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "ALS|Death|Loot")
+	FName LootItemID;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "ALS|Death|Loot")
+	int32 LootQuantity = 1;
+
+	// 1 = always drops (if LootItemID is set), 0 = never. Rolled once per
+	// death.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "ALS|Death|Loot", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float LootDropChance = 1.f;
+
 	UFUNCTION(BlueprintPure, Category = "ALS|Death")
 	bool IsRagdolling() const { return bIsRagdolling; }
 
@@ -34,6 +51,7 @@ protected:
 	void HandleDeath(AActor* Killer);
 
 	void Respawn();
+	void TrySpawnLoot() const;
 
 private:
 	UPROPERTY()

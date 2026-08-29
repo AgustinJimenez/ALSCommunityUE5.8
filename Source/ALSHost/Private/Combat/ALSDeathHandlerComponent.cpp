@@ -1,6 +1,7 @@
 #include "Combat/ALSDeathHandlerComponent.h"
 
 #include "Combat/ALSHealthComponent.h"
+#include "Inventory/ALSItemPickup.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Components/SkeletalMeshComponent.h"
@@ -71,6 +72,38 @@ void UALSDeathHandlerComponent::HandleDeath(AActor* Killer)
 	{
 		GetWorld()->GetTimerManager().SetTimer(RespawnTimerHandle, this, &UALSDeathHandlerComponent::Respawn, RespawnDelaySeconds, false);
 	}
+	else
+	{
+		TrySpawnLoot();
+	}
+}
+
+void UALSDeathHandlerComponent::TrySpawnLoot() const
+{
+	if (LootItemID.IsNone() || FMath::FRand() > LootDropChance)
+	{
+		return;
+	}
+
+	const ACharacter* OwnerCharacter = Cast<ACharacter>(GetOwner());
+	UWorld* World = GetWorld();
+	if (!OwnerCharacter || !World)
+	{
+		return;
+	}
+
+	FActorSpawnParameters SpawnParams;
+	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+	AALSItemPickup* Pickup = World->SpawnActorDeferred<AALSItemPickup>(AALSItemPickup::StaticClass(), FTransform(OwnerCharacter->GetActorLocation()));
+	if (!Pickup)
+	{
+		return;
+	}
+
+	Pickup->ItemID = LootItemID;
+	Pickup->Quantity = LootQuantity;
+	Pickup->FinishSpawning(FTransform(OwnerCharacter->GetActorLocation()));
 }
 
 void UALSDeathHandlerComponent::Respawn()

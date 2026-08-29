@@ -7,6 +7,7 @@
 #include "Combat/ALSHealthComponent.h"
 #include "Character/ALSCharacter.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "Inventory/ALSItemPickup.h"
 #include "Kismet/GameplayStatics.h"
 #include "GameFramework/DamageType.h"
 
@@ -27,7 +28,7 @@ TEST_CLASS(ALSDeathHandlerComponentTests, "ALSHost.Combat")
 		Spawner->AddWaitUntilLoadedCommand(TestRunner);
 	}
 
-	void SpawnEnemy(float RespawnDelaySeconds)
+	void SpawnEnemy(float RespawnDelaySeconds, FName LootItemID = NAME_None, int32 LootQuantity = 1, float LootDropChance = 1.f)
 	{
 		UClass* EnemyClass = LoadClass<AALSCharacter>(nullptr, TEXT("/Game/ALSHost/Characters/BP_EnemyBasic.BP_EnemyBasic_C"));
 		if (!EnemyClass)
@@ -44,7 +45,26 @@ TEST_CLASS(ALSDeathHandlerComponentTests, "ALSHost.Combat")
 		// just to exercise this component in isolation.
 		DeathHandler = NewObject<UALSDeathHandlerComponent>(Enemy);
 		DeathHandler->RespawnDelaySeconds = RespawnDelaySeconds;
+		DeathHandler->LootItemID = LootItemID;
+		DeathHandler->LootQuantity = LootQuantity;
+		DeathHandler->LootDropChance = LootDropChance;
 		DeathHandler->RegisterComponent();
+	}
+
+	int32 CountItemPickupsWithID(FName ItemID) const
+	{
+		TArray<AActor*> Pickups;
+		UGameplayStatics::GetAllActorsOfClass(&Spawner->GetWorld(), AALSItemPickup::StaticClass(), Pickups);
+
+		int32 Count = 0;
+		for (AActor* PickupActor : Pickups)
+		{
+			if (const AALSItemPickup* Pickup = Cast<AALSItemPickup>(PickupActor); Pickup && Pickup->ItemID == ItemID)
+			{
+				++Count;
+			}
+		}
+		return Count;
 	}
 
 	TEST_METHOD(LethalDamage_RagdollsMesh_AndStopsMovement)
@@ -89,6 +109,44 @@ TEST_CLASS(ALSDeathHandlerComponentTests, "ALSHost.Combat")
 				ASSERT_THAT(IsFalse(Health->IsDead()));
 				ASSERT_THAT(IsNear(Health->GetCurrentHealth(), Health->MaxHealth, 0.01f));
 				ASSERT_THAT(IsFalse(Enemy->GetMesh()->IsSimulatingPhysics()));
+			});
+	}
+
+	TEST_METHOD(PermanentDeath_WithLootConfigured_SpawnsItemPickupAtDeathLocation)
+	{
+		TestCommandBuilder
+			.StartWhen([this]() { return Spawner.IsValid(); })
+			.Then([this]() {
+				SpawnEnemy(0.f, TEXT("Ammo_Rifle"), 15);
+				ASSERT_THAT(AreEqual(CountItemPickupsWithID(TEXT("Ammo_Rifle")), 0));
+
+				UGameplayStatics::ApplyDamage(Enemy, 99999.f, nullptr, nullptr, UDamageType::StaticClass());
+
+				ASSERT_THAT(AreEqual(CountItemPickupsWithID(TEXT("Ammo_Rifle")), 1));
+			});
+	}
+
+	TEST_METHOD(RespawningDeath_NeverSpawnsLoot_EvenWithLootConfigured)
+	{
+		TestCommandBuilder
+			.StartWhen([this]() { return Spawner.IsValid(); })
+			.Then([this]() {
+				SpawnEnemy(0.2f, TEXT("Ammo_Rifle"), 15);
+				UGameplayStatics::ApplyDamage(Enemy, 99999.f, nullptr, nullptr, UDamageType::StaticClass());
+
+				ASSERT_THAT(AreEqual(CountItemPickupsWithID(TEXT("Ammo_Rifle")), 0));
+			});
+	}
+
+	TEST_METHOD(ZeroDropChance_NeverSpawnsLoot)
+	{
+		TestCommandBuilder
+			.StartWhen([this]() { return Spawner.IsValid(); })
+			.Then([this]() {
+				SpawnEnemy(0.f, TEXT("Ammo_Rifle"), 15, 0.f);
+				UGameplayStatics::ApplyDamage(Enemy, 99999.f, nullptr, nullptr, UDamageType::StaticClass());
+
+				ASSERT_THAT(AreEqual(CountItemPickupsWithID(TEXT("Ammo_Rifle")), 0));
 			});
 	}
 };
