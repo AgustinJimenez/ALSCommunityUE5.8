@@ -3,6 +3,8 @@
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
 #include "Character/ALSPlayerController.h"
+#include "Character/ALSCharacter.h"
+#include "Combat/ALSMedkitComponent.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "InputAction.h"
@@ -225,4 +227,37 @@ int32 UALSInventoryComponent::GetItemQuantity(FName ItemID) const
 bool UALSInventoryComponent::HasItem(FName ItemID, int32 Quantity) const
 {
 	return GetItemQuantity(ItemID) >= Quantity;
+}
+
+bool UALSInventoryComponent::EquipItem(FName ItemID)
+{
+	AALSCharacter* ALSChar = Cast<AALSCharacter>(GetOwner());
+	if (!ALSChar)
+	{
+		return false;
+	}
+
+	for (const FALSInventoryItem& Item : Items)
+	{
+		if (Item.ItemID != ItemID || !Item.bEquippable)
+		{
+			continue;
+		}
+
+		// The medkit needs its real mesh attached, not whichever default
+		// mesh ALS_CharacterBP's OnUpdateHeldObject switch shows for the Box
+		// overlay state - EquipMedkit() handles both the overlay state and
+		// the mesh together.
+		if (UALSMedkitComponent* Medkit = ALSChar->FindComponentByClass<UALSMedkitComponent>();
+			Medkit && ItemID == Medkit->MedkitItemID)
+		{
+			Medkit->EquipMedkit();
+			return true;
+		}
+
+		ALSChar->SetOverlayState(Item.EquipOverlayState);
+		return true;
+	}
+
+	return false;
 }

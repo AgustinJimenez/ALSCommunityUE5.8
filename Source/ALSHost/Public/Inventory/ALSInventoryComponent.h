@@ -78,6 +78,17 @@ public:
 	UFUNCTION(BlueprintPure, Category = "ALS|Inventory")
 	const TArray<FALSInventoryItem>& GetItems() const { return Items; }
 
+	// Equips ItemID if it's a recorded, bEquippable item - the single place
+	// that actually calls SetOverlayState (or, for the medkit, its own
+	// EquipMedkit() which handles the overlay state and mesh together), so
+	// both the inventory panel's row-click (UALSInventoryWidget) and a
+	// pickup's own auto-equip-into-an-empty-hand behavior (AALSItemPickup)
+	// share one implementation instead of duplicating the medkit special
+	// case at every call site. Returns false if ItemID isn't held or isn't
+	// equippable.
+	UFUNCTION(BlueprintCallable, Category = "ALS|Inventory")
+	bool EquipItem(FName ItemID);
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "ALS|Inventory|UI")
 	TObjectPtr<UInputAction> ToggleInventoryUIInputAction;
 

@@ -77,6 +77,59 @@ TEST_CLASS(ALSPickupTests, "ALSHost.Inventory")
 			});
 	}
 
+	TEST_METHOD(EquippableItemPickup_WhileUnarmed_AutoEquips)
+	{
+		TestCommandBuilder
+			.StartWhen([this]() { return Spawner.IsValid(); })
+			.Then([this]() {
+				SpawnCharacterAt(FVector::ZeroVector);
+				ASSERT_THAT(IsNotNull(Character));
+				ASSERT_THAT(IsTrue(Character->GetOverlayState() == EALSOverlayState::Default));
+
+				AALSItemPickup& ItemPickup = Spawner->SpawnActorAt<AALSItemPickup>(FVector(FarAwayOffset, 0.f, 0.f), FRotator::ZeroRotator);
+				ItemPickup.ItemID = TEXT("Weapon_Axe");
+				ItemPickup.DisplayName = FText::FromString(TEXT("Axe"));
+				ItemPickup.Quantity = 1;
+				ItemPickup.MaxStack = 1;
+				ItemPickup.bEquippable = true;
+				ItemPickup.EquipOverlayState = EALSOverlayState::Torch;
+
+				IALSInteractable::Execute_Interact(&ItemPickup, Character);
+
+				ASSERT_THAT(IsTrue(Character->GetOverlayState() == EALSOverlayState::Torch));
+			});
+	}
+
+	// A second equippable item picked up while already holding something
+	// must never silently swap it out - it should only be recorded as
+	// equippable in the inventory, equipped later via the panel.
+	TEST_METHOD(EquippableItemPickup_WhileAlreadyEquipped_DoesNotAutoEquip)
+	{
+		TestCommandBuilder
+			.StartWhen([this]() { return Spawner.IsValid(); })
+			.Then([this]() {
+				SpawnCharacterAt(FVector::ZeroVector);
+				ASSERT_THAT(IsNotNull(Character));
+				Character->SetOverlayState(EALSOverlayState::Rifle);
+
+				AALSItemPickup& ItemPickup = Spawner->SpawnActorAt<AALSItemPickup>(FVector(FarAwayOffset, 0.f, 0.f), FRotator::ZeroRotator);
+				ItemPickup.ItemID = TEXT("Weapon_Axe");
+				ItemPickup.DisplayName = FText::FromString(TEXT("Axe"));
+				ItemPickup.Quantity = 1;
+				ItemPickup.MaxStack = 1;
+				ItemPickup.bEquippable = true;
+				ItemPickup.EquipOverlayState = EALSOverlayState::Torch;
+
+				IALSInteractable::Execute_Interact(&ItemPickup, Character);
+
+				ASSERT_THAT(IsTrue(Character->GetOverlayState() == EALSOverlayState::Rifle));
+
+				UALSInventoryComponent* Inventory = Character->FindComponentByClass<UALSInventoryComponent>();
+				ASSERT_THAT(IsNotNull(Inventory));
+				ASSERT_THAT(IsTrue(Inventory->HasItem(TEXT("Weapon_Axe"), 1)));
+			});
+	}
+
 	// Guards the pickup-physics change: Mesh is now the root and simulates
 	// physics (PhysicsActor profile) so a pickup falls under gravity and
 	// rests on the ground instead of floating at its placed height. Spawn
