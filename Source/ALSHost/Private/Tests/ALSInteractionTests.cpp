@@ -251,6 +251,74 @@ TEST_CLASS(ALSInteractionRuntimeTests, "ALSHost.Interaction")
 			});
 	}
 
+	TEST_METHOD(MeleeComponent_WithAxeInInventory_DealsBonusDamage)
+	{
+		TestCommandBuilder
+			.StartWhen([this]() { return Spawner.IsValid(); })
+			.Then([this]() {
+				SpawnCharacterAndPossess(FVector::ZeroVector);
+
+				UALSInventoryComponent* Inventory = Character->FindComponentByClass<UALSInventoryComponent>();
+				ASSERT_THAT(IsNotNull(Inventory));
+				Inventory->AddItem(TEXT("Weapon_Axe"), FText::FromString(TEXT("Axe")), 1, 1);
+
+				Melee = NewObject<UALSMeleeComponent>(Character);
+				Melee->MeleeRange = 300.f;
+				Melee->SweepRadius = 60.f;
+				Melee->RegisterComponent();
+				ASSERT_THAT(IsTrue(Melee->HasAxeEquipped()));
+				ASSERT_THAT(IsFalse(Melee->HasKnifeEquipped()));
+
+				UClass* CharClass = LoadClass<AALSCharacter>(nullptr, TEXT("/ALSV4_CPP/AdvancedLocomotionV4/Blueprints/CharacterLogic/ALS_CharacterBP.ALS_CharacterBP_C"));
+				Target = &Spawner->SpawnActorAt<AALSCharacter>(FVector(150.f, 0.f, 0.f), FRotator::ZeroRotator, FActorSpawnParameters(), CharClass);
+				Target->GetCharacterMovement()->DisableMovement();
+				TargetHealth = Target->FindComponentByClass<UALSHealthComponent>();
+				ASSERT_THAT(IsNotNull(TargetHealth));
+			})
+			.WaitDelay(FTimespan::FromSeconds(0.2))
+			.Then([this]() {
+				const float HealthBefore = TargetHealth->GetCurrentHealth();
+				ASSERT_THAT(IsTrue(Melee->TryMeleeAttack()));
+				const float ExpectedDamage = Melee->FistDamage + Melee->AxeDamageBonus;
+				ASSERT_THAT(IsNear(TargetHealth->GetCurrentHealth(), HealthBefore - ExpectedDamage, 0.5f));
+			});
+	}
+
+	TEST_METHOD(MeleeComponent_WithBothKnifeAndAxe_AxeBonusWins)
+	{
+		TestCommandBuilder
+			.StartWhen([this]() { return Spawner.IsValid(); })
+			.Then([this]() {
+				SpawnCharacterAndPossess(FVector::ZeroVector);
+
+				UALSInventoryComponent* Inventory = Character->FindComponentByClass<UALSInventoryComponent>();
+				ASSERT_THAT(IsNotNull(Inventory));
+				Inventory->AddItem(TEXT("Weapon_Knife"), FText::FromString(TEXT("Knife")), 1, 1);
+				Inventory->AddItem(TEXT("Weapon_Axe"), FText::FromString(TEXT("Axe")), 1, 1);
+
+				Melee = NewObject<UALSMeleeComponent>(Character);
+				Melee->MeleeRange = 300.f;
+				Melee->SweepRadius = 60.f;
+				Melee->RegisterComponent();
+				ASSERT_THAT(IsTrue(Melee->HasKnifeEquipped()));
+				ASSERT_THAT(IsTrue(Melee->HasAxeEquipped()));
+
+				UClass* CharClass = LoadClass<AALSCharacter>(nullptr, TEXT("/ALSV4_CPP/AdvancedLocomotionV4/Blueprints/CharacterLogic/ALS_CharacterBP.ALS_CharacterBP_C"));
+				Target = &Spawner->SpawnActorAt<AALSCharacter>(FVector(150.f, 0.f, 0.f), FRotator::ZeroRotator, FActorSpawnParameters(), CharClass);
+				Target->GetCharacterMovement()->DisableMovement();
+				TargetHealth = Target->FindComponentByClass<UALSHealthComponent>();
+				ASSERT_THAT(IsNotNull(TargetHealth));
+			})
+			.WaitDelay(FTimespan::FromSeconds(0.2))
+			.Then([this]() {
+				const float HealthBefore = TargetHealth->GetCurrentHealth();
+				ASSERT_THAT(IsTrue(Melee->TryMeleeAttack()));
+				// Axe bonus should win, not stack with the knife's.
+				const float ExpectedDamage = Melee->FistDamage + Melee->AxeDamageBonus;
+				ASSERT_THAT(IsNear(TargetHealth->GetCurrentHealth(), HealthBefore - ExpectedDamage, 0.5f));
+			});
+	}
+
 	// Same direct-TryInteract() pattern as InteractionComponent_TryInteract_HitsDoorInFront_OpensIt
 	// above (not real Enhanced Input injection - FInputTestActions' async,
 	// tick-delayed injection combined with this floorless temp map's

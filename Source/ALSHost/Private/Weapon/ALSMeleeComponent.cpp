@@ -98,6 +98,13 @@ bool UALSMeleeComponent::HasKnifeEquipped() const
 	return Inventory && Inventory->GetItemQuantity(KnifeItemID) > 0;
 }
 
+bool UALSMeleeComponent::HasAxeEquipped() const
+{
+	const APawn* OwnerPawn = Cast<APawn>(GetOwner());
+	const UALSInventoryComponent* Inventory = OwnerPawn ? OwnerPawn->FindComponentByClass<UALSInventoryComponent>() : nullptr;
+	return Inventory && Inventory->GetItemQuantity(AxeItemID) > 0;
+}
+
 bool UALSMeleeComponent::TryMeleeAttack()
 {
 	UWorld* World = GetWorld();
@@ -141,7 +148,17 @@ bool UALSMeleeComponent::TryMeleeAttack()
 		return true;
 	}
 
-	const float Damage = HasKnifeEquipped() ? (FistDamage + KnifeDamageBonus) : FistDamage;
+	// Axe beats knife if both are carried - it's a strictly better weapon,
+	// not a stacking bonus.
+	float Damage = FistDamage;
+	if (HasAxeEquipped())
+	{
+		Damage += AxeDamageBonus;
+	}
+	else if (HasKnifeEquipped())
+	{
+		Damage += KnifeDamageBonus;
+	}
 	UGameplayStatics::ApplyPointDamage(Hit.GetActor(), Damage, CameraRotation.Vector(), Hit, PC, OwnerPawn, DamageTypeClass);
 
 	if (ImpactSound)

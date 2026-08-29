@@ -34,6 +34,13 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "ALS|Melee")
 	float KnifeDamageBonus = 20.0f;
 
+	// Same idea as KnifeDamageBonus but for the axe - a heavier weapon, so a
+	// bigger bonus. If both are carried, the axe's bonus wins (see
+	// TryMeleeAttack) rather than stacking - it's a strictly better weapon,
+	// not a separate damage source.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "ALS|Melee")
+	float AxeDamageBonus = 35.0f;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "ALS|Melee")
 	float MeleeRange = 180.0f;
 
@@ -53,6 +60,9 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "ALS|Melee")
 	FName KnifeItemID = TEXT("Weapon_Knife");
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "ALS|Melee")
+	FName AxeItemID = TEXT("Weapon_Axe");
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "ALS|Melee|Effects")
 	TObjectPtr<USoundBase> SwingSound;
 
@@ -70,6 +80,9 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "ALS|Melee")
 	bool HasKnifeEquipped() const;
+
+	UFUNCTION(BlueprintPure, Category = "ALS|Melee")
+	bool HasAxeEquipped() const;
 
 	UFUNCTION(BlueprintPure, Category = "ALS|Melee")
 	bool IsOnCooldown() const;
