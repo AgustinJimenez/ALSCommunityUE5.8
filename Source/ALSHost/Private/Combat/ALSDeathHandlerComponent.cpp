@@ -80,7 +80,11 @@ void UALSDeathHandlerComponent::HandleDeath(AActor* Killer)
 
 void UALSDeathHandlerComponent::TrySpawnLoot() const
 {
-	if (LootItemID.IsNone() || FMath::FRand() > LootDropChance)
+	// FRand() is uniform on [0,1) (can return exactly 0.0) - the skip
+	// condition must be ">=", not ">", or a LootDropChance of exactly 0 can
+	// still occasionally spawn loot on the rare tick FRand() lands on 0.0.
+	// Caught by ZeroDropChance_NeverSpawnsLoot actually failing intermittently.
+	if (LootItemID.IsNone() || FMath::FRand() >= LootDropChance)
 	{
 		return;
 	}

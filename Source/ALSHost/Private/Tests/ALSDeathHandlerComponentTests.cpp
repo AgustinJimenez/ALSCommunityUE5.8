@@ -39,16 +39,24 @@ TEST_CLASS(ALSDeathHandlerComponentTests, "ALSHost.Combat")
 		Enemy = &Spawner->SpawnActor<AALSCharacter>(FActorSpawnParameters(), EnemyClass);
 		Health = Enemy->FindComponentByClass<UALSHealthComponent>();
 
-		// BP_EnemyBasic has no UALSDeathHandlerComponent placed in its own
-		// tree (see AGENTS.md - only the player Blueprint has one), so add
-		// one dynamically for the test rather than requiring content changes
-		// just to exercise this component in isolation.
-		DeathHandler = NewObject<UALSDeathHandlerComponent>(Enemy);
-		DeathHandler->RespawnDelaySeconds = RespawnDelaySeconds;
-		DeathHandler->LootItemID = LootItemID;
-		DeathHandler->LootQuantity = LootQuantity;
-		DeathHandler->LootDropChance = LootDropChance;
-		DeathHandler->RegisterComponent();
+		// BP_EnemyBasic now has its own real UALSDeathHandlerComponent baked
+		// in (see the "enemies drop loot" AGENTS.md entry) - reuse THAT one
+		// rather than adding a second, independent instance. Adding a second
+		// one used to be correct (see git history) back when the Blueprint
+		// had none of its own, but doing that now means two components both
+		// bind Health->OnDeath and both react - e.g. both spawning loot, or
+		// the Blueprint's own baked defaults (RespawnDelaySeconds=0,
+		// LootDropChance=0.75) firing independently of whatever this test
+		// configured on a *second* component, silently breaking assertions
+		// that assumed only one component's config was in play.
+		DeathHandler = Enemy->FindComponentByClass<UALSDeathHandlerComponent>();
+		if (DeathHandler)
+		{
+			DeathHandler->RespawnDelaySeconds = RespawnDelaySeconds;
+			DeathHandler->LootItemID = LootItemID;
+			DeathHandler->LootQuantity = LootQuantity;
+			DeathHandler->LootDropChance = LootDropChance;
+		}
 	}
 
 	int32 CountItemPickupsWithID(FName ItemID) const
@@ -112,17 +120,24 @@ TEST_CLASS(ALSDeathHandlerComponentTests, "ALSHost.Combat")
 			});
 	}
 
+	// All three loot tests compare against a baseline count taken right
+	// before triggering death, rather than asserting an absolute 0/1 - a
+	// stray AALSItemPickup possibly left behind by another TEST_METHOD's
+	// FMapTestSpawner temp world (unconfirmed whether that can happen, but
+	// this makes the assertion robust either way) would otherwise produce a
+	// false failure unrelated to this test's own logic.
+
 	TEST_METHOD(PermanentDeath_WithLootConfigured_SpawnsItemPickupAtDeathLocation)
 	{
 		TestCommandBuilder
 			.StartWhen([this]() { return Spawner.IsValid(); })
 			.Then([this]() {
 				SpawnEnemy(0.f, TEXT("Ammo_Rifle"), 15);
-				ASSERT_THAT(AreEqual(CountItemPickupsWithID(TEXT("Ammo_Rifle")), 0));
+				const int32 BaselineCount = CountItemPickupsWithID(TEXT("Ammo_Rifle"));
 
 				UGameplayStatics::ApplyDamage(Enemy, 99999.f, nullptr, nullptr, UDamageType::StaticClass());
 
-				ASSERT_THAT(AreEqual(CountItemPickupsWithID(TEXT("Ammo_Rifle")), 1));
+				ASSERT_THAT(AreEqual(CountItemPickupsWithID(TEXT("Ammo_Rifle")), BaselineCount + 1));
 			});
 	}
 
@@ -132,9 +147,11 @@ TEST_CLASS(ALSDeathHandlerComponentTests, "ALSHost.Combat")
 			.StartWhen([this]() { return Spawner.IsValid(); })
 			.Then([this]() {
 				SpawnEnemy(0.2f, TEXT("Ammo_Rifle"), 15);
+				const int32 BaselineCount = CountItemPickupsWithID(TEXT("Ammo_Rifle"));
+
 				UGameplayStatics::ApplyDamage(Enemy, 99999.f, nullptr, nullptr, UDamageType::StaticClass());
 
-				ASSERT_THAT(AreEqual(CountItemPickupsWithID(TEXT("Ammo_Rifle")), 0));
+				ASSERT_THAT(AreEqual(CountItemPickupsWithID(TEXT("Ammo_Rifle")), BaselineCount));
 			});
 	}
 
@@ -144,9 +161,11 @@ TEST_CLASS(ALSDeathHandlerComponentTests, "ALSHost.Combat")
 			.StartWhen([this]() { return Spawner.IsValid(); })
 			.Then([this]() {
 				SpawnEnemy(0.f, TEXT("Ammo_Rifle"), 15, 0.f);
+				const int32 BaselineCount = CountItemPickupsWithID(TEXT("Ammo_Rifle"));
+
 				UGameplayStatics::ApplyDamage(Enemy, 99999.f, nullptr, nullptr, UDamageType::StaticClass());
 
-				ASSERT_THAT(AreEqual(CountItemPickupsWithID(TEXT("Ammo_Rifle")), 0));
+				ASSERT_THAT(AreEqual(CountItemPickupsWithID(TEXT("Ammo_Rifle")), BaselineCount));
 			});
 	}
 };
