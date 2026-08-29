@@ -42,9 +42,19 @@ protected:
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UProgressBar> MedkitApplyBar;
 
+	// Hidden (Collapsed) except from the moment UALSHealthComponent::OnDeath
+	// fires until health next changes off of 0 (i.e. UALSDeathHandlerComponent's
+	// respawn actually restores it) - previously death had zero UI feedback
+	// at all, see AGENTS.md.
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> DeathText;
+
 private:
 	UFUNCTION()
 	void HandleHealthChanged(float NewHealth, float MaxHealth, float Delta, AActor* DamageInstigator);
+
+	UFUNCTION()
+	void HandleDeath(AActor* Killer);
 
 	UFUNCTION()
 	void HandleStaminaChanged(float NewStamina, float MaxStamina);

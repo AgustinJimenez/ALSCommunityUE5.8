@@ -23,6 +23,11 @@ void UALSStatusBarsWidget::NativeConstruct()
 		MedkitApplyBar->SetVisibility(ESlateVisibility::Collapsed);
 	}
 
+	if (DeathText)
+	{
+		DeathText->SetVisibility(ESlateVisibility::Collapsed);
+	}
+
 	if (UALSMedkitComponent* Medkit = Pawn->FindComponentByClass<UALSMedkitComponent>())
 	{
 		Medkit->OnMedkitApplyStarted.AddDynamic(this, &UALSStatusBarsWidget::HandleMedkitApplyStarted);
@@ -33,6 +38,7 @@ void UALSStatusBarsWidget::NativeConstruct()
 	if (UALSHealthComponent* Health = Pawn->FindComponentByClass<UALSHealthComponent>())
 	{
 		Health->OnHealthChanged.AddDynamic(this, &UALSStatusBarsWidget::HandleHealthChanged);
+		Health->OnDeath.AddDynamic(this, &UALSStatusBarsWidget::HandleDeath);
 		HandleHealthChanged(Health->GetCurrentHealth(), Health->MaxHealth, 0.f, nullptr);
 	}
 
@@ -65,6 +71,22 @@ void UALSStatusBarsWidget::HandleHealthChanged(float NewHealth, float MaxHealth,
 	if (HealthText)
 	{
 		HealthText->SetText(FText::FromString(FString::Printf(TEXT("%d / %d"), FMath::RoundToInt(NewHealth), FMath::RoundToInt(MaxHealth))));
+	}
+
+	// Health going back above 0 after a death means UALSDeathHandlerComponent
+	// actually respawned the character - clear the death message rather than
+	// waiting on a separate "respawned" signal that doesn't exist.
+	if (DeathText && NewHealth > 0.f)
+	{
+		DeathText->SetVisibility(ESlateVisibility::Collapsed);
+	}
+}
+
+void UALSStatusBarsWidget::HandleDeath(AActor* Killer)
+{
+	if (DeathText)
+	{
+		DeathText->SetVisibility(ESlateVisibility::Visible);
 	}
 }
 
