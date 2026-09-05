@@ -249,10 +249,14 @@ protected:
 	// that doesn't visually respond (traced deep into ALS's own Blueprints
 	// with no fix found within scope - see
 	// AGENT_TASKS/0002_q_menu_scroll_not_working.md). Rather than fix that,
-	// make the menu mouse-clickable instead: while Q is held, show the
-	// cursor and suspend ALS's DefaultInputMappingContext entirely (camera
-	// look + movement), so nothing fights the user's mouse clicks; restore
-	// both on release.
+	// make the menu mouse-clickable instead: pressing Q shows the cursor and
+	// suspends ALS's DefaultInputMappingContext entirely (camera look +
+	// movement), so nothing fights the user's mouse clicks; pressing Q again
+	// restores both and closes it. Toggled on press only (bound to
+	// ETriggerEvent::Started alone) rather than open-on-press/close-on-
+	// release, so the menu stays up while the user works the sliders/rows
+	// inside it instead of vanishing the instant Q is released.
+	void HandleDebugOverlayMenuToggled(const FInputActionValue& Value);
 	void HandleDebugOverlayMenuOpened(const FInputActionValue& Value);
 	void HandleDebugOverlayMenuClosed(const FInputActionValue& Value);
 

@@ -9,9 +9,11 @@
 #include "Components/SkeletalMeshComponent.h"
 
 #include "Engine/DataTable.h"
+#include "GameFramework/Pawn.h"
 #include "Kismet/KismetSystemLibrary.h"
 #include "Library/ALSCharacterStructLibrary.h"
 #include "PhysicalMaterials/PhysicalMaterial.h"
+#include "Sound/SoundAttenuation.h"
 #include "NiagaraSystem.h"
 #include "NiagaraFunctionLibrary.h"
 
@@ -97,12 +99,18 @@ void UALSAnimNotifyFootstep::Notify(USkeletalMeshComponent* MeshComp, UAnimSeque
 					                           ? VolumeMultiplier
 					                           : VolumeMultiplier * (1.0f - MaskCurveValue);
 
+				const APawn* OwnerPawn = Cast<APawn>(MeshOwner);
+				const bool bIsPlayerControlled = OwnerPawn && OwnerPawn->IsPlayerControlled();
+				USoundAttenuation* AttenuationOverride = bIsPlayerControlled
+					                                          ? HitFX->SoundAttenuationOverride_Player.LoadSynchronous()
+					                                          : HitFX->SoundAttenuationOverride_NPC.LoadSynchronous();
+
 				switch (HitFX->SoundSpawnType)
 				{
 				case EALSSpawnType::Location:
 					SpawnedSound = UGameplayStatics::SpawnSoundAtLocation(
 						World, HitFX->Sound.Get(), Hit.Location + HitFX->SoundLocationOffset,
-						HitFX->SoundRotationOffset, FinalVolMult, PitchMultiplier);
+						HitFX->SoundRotationOffset, FinalVolMult, PitchMultiplier, 0.0f, AttenuationOverride);
 					break;
 
 				case EALSSpawnType::Attached:
@@ -110,7 +118,7 @@ void UALSAnimNotifyFootstep::Notify(USkeletalMeshComponent* MeshComp, UAnimSeque
 					                                                    HitFX->SoundLocationOffset,
 					                                                    HitFX->SoundRotationOffset,
 					                                                    HitFX->SoundAttachmentType, true, FinalVolMult,
-					                                                    PitchMultiplier);
+					                                                    PitchMultiplier, 0.0f, AttenuationOverride);
 
 					break;
 				}

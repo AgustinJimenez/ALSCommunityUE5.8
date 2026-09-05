@@ -107,6 +107,12 @@ private:
 	void RefreshValueLabels();
 	void RefreshFreezeButtonLabel();
 
+	// See UALSHeldObjectGripTuningWidget::bDelegatesBound - same latent bug,
+	// same fix: this widget is cached and repeatedly RemoveFromParent/
+	// AddToViewport'd (T key), which re-runs NativeConstruct each time and
+	// would otherwise pile up duplicate AddDynamic bindings.
+	bool bDelegatesBound = false;
+
 	UPROPERTY()
 	TObjectPtr<UALSWeaponFireComponent> TargetComponent;
 };

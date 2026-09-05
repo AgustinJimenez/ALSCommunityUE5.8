@@ -27,6 +27,7 @@
 #include "UI/ALSDebugPropMenuWidget.h"
 #include "Camera/ALSHostPlayerCameraManager.h"
 #include "Weapon/ALSProjectile.h"
+#include "Weapon/ALSMeleeComponent.h"
 #include "Sound/SoundBase.h"
 #include "Particles/ParticleSystem.h"
 #include "Particles/ParticleSystemComponent.h"
@@ -279,9 +280,9 @@ void UALSWeaponFireComponent::TrySetupInput()
 
 	if (DebugOverlayMenuInputAction)
 	{
-		EIC->BindAction(DebugOverlayMenuInputAction, ETriggerEvent::Started, this, &UALSWeaponFireComponent::HandleDebugOverlayMenuOpened);
-		EIC->BindAction(DebugOverlayMenuInputAction, ETriggerEvent::Completed, this, &UALSWeaponFireComponent::HandleDebugOverlayMenuClosed);
-		EIC->BindAction(DebugOverlayMenuInputAction, ETriggerEvent::Canceled, this, &UALSWeaponFireComponent::HandleDebugOverlayMenuClosed);
+		// Toggle on press only - see HandleDebugOverlayMenuToggled's header
+		// comment for why this isn't press-to-open/release-to-close anymore.
+		EIC->BindAction(DebugOverlayMenuInputAction, ETriggerEvent::Started, this, &UALSWeaponFireComponent::HandleDebugOverlayMenuToggled);
 	}
 
 	bInputBound = true;
@@ -376,14 +377,16 @@ void UALSWeaponFireComponent::HandleCameraZoomInput(const FInputActionValue& Val
 	if (APlayerController* PC = Cast<APlayerController>(ALSChar->GetController()))
 	{
 		// Confirmed via diagnostic logging that this handler already
-		// receives scroll input correctly even while Q is held, and that
-		// ALS's own debug overlay-cycle menu not responding to scroll is a
-		// pre-existing bug in ALS's own Blueprints (traced through 4 layers,
-		// see AGENT_TASKS/0002_q_menu_scroll_not_working.md) - not an input
-		// routing conflict. Still worth skipping zoom while Q is held so
-		// the camera doesn't zoom while the menu is up; the actual click-
-		// based menu fix lives in HandleDebugOverlayMenuOpened/Closed.
-		if (PC->IsInputKeyDown(EKeys::Q))
+		// receives scroll input correctly even while the debug menu is open,
+		// and that ALS's own debug overlay-cycle menu not responding to
+		// scroll is a pre-existing bug in ALS's own Blueprints (traced
+		// through 4 layers, see AGENT_TASKS/0002_q_menu_scroll_not_working.md)
+		// - not an input routing conflict. Still worth skipping zoom while
+		// the menu is open so the camera doesn't zoom underneath it. Checks
+		// the widget's own viewport state, not IsInputKeyDown(EKeys::Q) -
+		// the menu is now a press-to-toggle, so it can stay open long after
+		// Q itself is released (see HandleDebugOverlayMenuToggled).
+		if (DebugPropMenuWidgetInstance && DebugPropMenuWidgetInstance->IsInViewport())
 		{
 			return;
 		}
@@ -392,6 +395,19 @@ void UALSWeaponFireComponent::HandleCameraZoomInput(const FInputActionValue& Val
 		{
 			CamMgr->AddZoomInput(Value.Get<float>());
 		}
+	}
+}
+
+void UALSWeaponFireComponent::HandleDebugOverlayMenuToggled(const FInputActionValue& Value)
+{
+	const bool bCurrentlyOpen = DebugPropMenuWidgetInstance && DebugPropMenuWidgetInstance->IsInViewport();
+	if (bCurrentlyOpen)
+	{
+		HandleDebugOverlayMenuClosed(Value);
+	}
+	else
+	{
+		HandleDebugOverlayMenuOpened(Value);
 	}
 }
 
@@ -536,6 +552,15 @@ void UALSWeaponFireComponent::StartFiring()
 		const bool bHasWeaponEquipped = WeaponMesh && WeaponMesh->GetSkeletalMeshAsset();
 		if (!bHasWeaponEquipped)
 		{
+			// No ranged weapon in hand - the axe/knife are StaticMesh props,
+			// not SkeletalMesh weapons, so they never satisfy
+			// bHasWeaponEquipped above. Left-click used to just do nothing
+			// in that case; now it triggers a melee attack instead, so
+			// clicking with the axe/knife equipped actually does something.
+			if (UALSMeleeComponent* Melee = ALSChar->FindComponentByClass<UALSMeleeComponent>())
+			{
+				Melee->TryMeleeAttack();
+			}
 			return;
 		}
 

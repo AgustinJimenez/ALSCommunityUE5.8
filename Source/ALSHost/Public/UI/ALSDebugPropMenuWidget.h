@@ -6,6 +6,7 @@
 
 class UVerticalBox;
 class UCanvasPanel;
+class UCanvasPanelSlot;
 class UALSOverlayStateOptionWidget;
 class UALSDebugMenuRowWidget;
 class UALSDebugModesMenuWidget;
@@ -51,6 +52,24 @@ protected:
 private:
 	void ToggleDebugModesSubmenu();
 
+	// Called by the nested DebugModesSubmenu when its own Held Object Grip
+	// Tuning row is toggled - hides this menu's row list and moves the whole
+	// DebugModesSubmenu (rows collapsed, grip tuning panel showing) into the
+	// top-left screen corner so it isn't fighting the (now-hidden) overlay
+	// state list for space; restores both on close.
+	void HandleGripTuningVisibilityChanged(bool bGripTuningOpen);
+
 	UPROPERTY()
 	TObjectPtr<UALSDebugModesMenuWidget> DebugModesSubmenu;
+
+	UPROPERTY()
+	TObjectPtr<UCanvasPanelSlot> DebugModesSubmenuSlot;
+
+	// NativeConstruct fires again every time this cached widget instance is
+	// removed and re-added to the viewport (each Q press toggles it via
+	// RemoveFromParent/AddToViewport, which rebuilds the Slate
+	// representation) - without this guard, every single Q toggle destroyed
+	// and recreated all ~9 overlay-state rows plus the generic rows from
+	// scratch, real unnecessary per-toggle churn. Populate the row list once.
+	bool bRowsPopulated = false;
 };

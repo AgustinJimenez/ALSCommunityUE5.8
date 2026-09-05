@@ -19,6 +19,7 @@ class UCurveFloat;
 class UNiagaraSystem;
 class UMaterialInterface;
 class USoundBase;
+class USoundAttenuation;
 class UPrimitiveComponent;
 
 USTRUCT(BlueprintType)
@@ -271,6 +272,14 @@ struct FALSHitFX : public FTableRowBase
 
 	UPROPERTY(EditAnywhere, Category = "Sound")
 	FRotator SoundRotationOffset = FRotator::ZeroRotator;
+
+	// Used instead of the Sound asset's own AttenuationSettings when the footstep owner is the locally-controlled player pawn.
+	UPROPERTY(EditAnywhere, Category = "Sound")
+	TSoftObjectPtr<USoundAttenuation> SoundAttenuationOverride_Player = nullptr;
+
+	// Used instead of the Sound asset's own AttenuationSettings when the footstep owner is not player-controlled (AI characters).
+	UPROPERTY(EditAnywhere, Category = "Sound")
+	TSoftObjectPtr<USoundAttenuation> SoundAttenuationOverride_NPC = nullptr;
 
 	UPROPERTY(EditAnywhere, Category = "Decal")
 	TSoftObjectPtr<UMaterialInterface> DecalMaterial = nullptr;

@@ -40,14 +40,18 @@ void UALSRifleReloadTuningWidget::NativeConstruct()
 		CopyButton ? TEXT("bound") : TEXT("NULL"),
 		TargetComponent ? *TargetComponent->GetName() : TEXT("null"));
 
-	if (Slider_LocX) { Slider_LocX->OnValueChanged.AddDynamic(this, &UALSRifleReloadTuningWidget::OnLocXChanged); }
-	if (Slider_LocY) { Slider_LocY->OnValueChanged.AddDynamic(this, &UALSRifleReloadTuningWidget::OnLocYChanged); }
-	if (Slider_LocZ) { Slider_LocZ->OnValueChanged.AddDynamic(this, &UALSRifleReloadTuningWidget::OnLocZChanged); }
-	if (Slider_RotPitch) { Slider_RotPitch->OnValueChanged.AddDynamic(this, &UALSRifleReloadTuningWidget::OnRotPitchChanged); }
-	if (Slider_RotYaw) { Slider_RotYaw->OnValueChanged.AddDynamic(this, &UALSRifleReloadTuningWidget::OnRotYawChanged); }
-	if (Slider_RotRoll) { Slider_RotRoll->OnValueChanged.AddDynamic(this, &UALSRifleReloadTuningWidget::OnRotRollChanged); }
-	if (CopyButton) { CopyButton->OnClicked.AddDynamic(this, &UALSRifleReloadTuningWidget::OnCopyClicked); }
-	if (FreezeButton) { FreezeButton->OnClicked.AddDynamic(this, &UALSRifleReloadTuningWidget::OnFreezeClicked); }
+	if (!bDelegatesBound)
+	{
+		if (Slider_LocX) { Slider_LocX->OnValueChanged.AddDynamic(this, &UALSRifleReloadTuningWidget::OnLocXChanged); }
+		if (Slider_LocY) { Slider_LocY->OnValueChanged.AddDynamic(this, &UALSRifleReloadTuningWidget::OnLocYChanged); }
+		if (Slider_LocZ) { Slider_LocZ->OnValueChanged.AddDynamic(this, &UALSRifleReloadTuningWidget::OnLocZChanged); }
+		if (Slider_RotPitch) { Slider_RotPitch->OnValueChanged.AddDynamic(this, &UALSRifleReloadTuningWidget::OnRotPitchChanged); }
+		if (Slider_RotYaw) { Slider_RotYaw->OnValueChanged.AddDynamic(this, &UALSRifleReloadTuningWidget::OnRotYawChanged); }
+		if (Slider_RotRoll) { Slider_RotRoll->OnValueChanged.AddDynamic(this, &UALSRifleReloadTuningWidget::OnRotRollChanged); }
+		if (CopyButton) { CopyButton->OnClicked.AddDynamic(this, &UALSRifleReloadTuningWidget::OnCopyClicked); }
+		if (FreezeButton) { FreezeButton->OnClicked.AddDynamic(this, &UALSRifleReloadTuningWidget::OnFreezeClicked); }
+		bDelegatesBound = true;
+	}
 
 	RefreshValueLabels();
 	RefreshFreezeButtonLabel();
